@@ -1,0 +1,33 @@
+# Go build outputs
+/granger
+/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Go tooling
+coverage.out
+*.cover
+*.prof
+
+# Dependency/vendor mode, if generated intentionally remove this line.
+/vendor/
+
+# Local config and secrets
+.env
+.env.*
+*.local
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+*.pid
