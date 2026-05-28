@@ -129,8 +129,11 @@ func (c Config) Validate() error {
 	interfaces := map[string]string{}
 	services := map[string]string{}
 	for name, out := range c.Outputs {
-		if out.Type == "" || out.Interface == "" {
-			return errors.New("output " + name + " has empty type/interface")
+		if out.Type == "" {
+			return errors.New("output " + name + " has empty type")
+		}
+		if out.Interface == "" && outputRequiresInterface(out.Type) {
+			return errors.New("output " + name + " has empty interface")
 		}
 		if err := rememberUnique(interfaces, out.Interface, "output "+name); err != nil {
 			return err
@@ -169,6 +172,15 @@ func (c Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+func outputRequiresInterface(typ string) bool {
+	switch typ {
+	case "sing-box", "xray":
+		return false
+	default:
+		return true
+	}
 }
 
 func rememberUnique(seen map[string]string, value, owner string) error {

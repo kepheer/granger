@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"sort"
 
 	"granger/internal/config"
 	"granger/internal/driver"
@@ -29,7 +30,10 @@ func NewWithRegistry(r runner.Runner, reg *driver.Registry) Engine {
 func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 	ctx := driver.BaseContext(cfg, e.Runner)
 	var res []runner.Result
-	for name, out := range cfg.Outputs {
+	outputNames := sortedOutputNames(cfg)
+	upstreamNames := sortedUpstreamNames(cfg)
+	for _, name := range outputNames {
+		out := cfg.Outputs[name]
 		outCtx := ctx
 		outCtx.OutputName = name
 		outCtx.Output = out
@@ -42,14 +46,16 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 		res = append(res, d.GenerateServerConfig(name, out, outCtx)...)
 		res = append(res, d.ApplyIngressFirewall(name, out, outCtx)...)
 	}
-	for name, up := range cfg.Upstreams {
+	for _, name := range upstreamNames {
+		up := cfg.Upstreams[name]
 		d, err := e.Registry.Upstream(up.Type)
 		if err != nil {
 			res = append(res, fail("Upstream driver "+name, err))
 			continue
 		}
 		res = append(res, d.NormalizeConfig(name, up, ctx)...)
-		for outName, out := range cfg.Outputs {
+		for _, outName := range outputNames {
+			out := cfg.Outputs[outName]
 			outCtx := ctx
 			outCtx.OutputName = outName
 			outCtx.Output = out
@@ -57,13 +63,15 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 			res = append(res, d.ApplyFirewall(name, up, outCtx)...)
 		}
 	}
-	for name, up := range cfg.Upstreams {
+	for _, name := range upstreamNames {
+		up := cfg.Upstreams[name]
 		d, err := e.Registry.Upstream(up.Type)
 		if err != nil {
 			res = append(res, fail("Route driver "+name, err))
 			continue
 		}
-		for outName, out := range cfg.Outputs {
+		for _, outName := range outputNames {
+			out := cfg.Outputs[outName]
 			outCtx := ctx
 			outCtx.OutputName = outName
 			outCtx.Output = out
@@ -76,7 +84,8 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 
 func (e Engine) DNSRules(cfg config.Config, ctx driver.ApplyContext) []driver.DNSRule {
 	var out []driver.DNSRule
-	for name, up := range cfg.Upstreams {
+	for _, name := range sortedUpstreamNames(cfg) {
+		up := cfg.Upstreams[name]
 		d, err := e.Registry.Upstream(up.Type)
 		if err != nil {
 			continue
@@ -88,9 +97,9 @@ func (e Engine) DNSRules(cfg config.Config, ctx driver.ApplyContext) []driver.DN
 
 func (e Engine) RestartOutput(name string, cfg config.Config) []runner.Result {
 	if name == "" {
-		for n := range cfg.Outputs {
-			name = n
-			break
+		names := sortedOutputNames(cfg)
+		if len(names) > 0 {
+			name = names[0]
 		}
 	}
 	out, ok := cfg.Outputs[name]
@@ -106,9 +115,9 @@ func (e Engine) RestartOutput(name string, cfg config.Config) []runner.Result {
 
 func (e Engine) RestartUpstream(name string, cfg config.Config) []runner.Result {
 	if name == "" {
-		for n := range cfg.Upstreams {
-			name = n
-			break
+		names := sortedUpstreamNames(cfg)
+		if len(names) > 0 {
+			name = names[0]
 		}
 	}
 	up, ok := cfg.Upstreams[name]
@@ -131,7 +140,8 @@ func (e Engine) TestDomain(domain string, cfg config.Config) []runner.Result {
 func (e Engine) Runtime(cfg config.Config) []driver.RuntimeStatus {
 	ctx := driver.BaseContext(cfg, e.Runner)
 	var out []driver.RuntimeStatus
-	for name, o := range cfg.Outputs {
+	for _, name := range sortedOutputNames(cfg) {
+		o := cfg.Outputs[name]
 		d, err := e.Registry.Output(o.Type)
 		if err != nil {
 			out = append(out, driver.RuntimeStatus{Name: name, Type: o.Type, State: driver.StateBroken, Summary: err.Error()})
@@ -139,7 +149,8 @@ func (e Engine) Runtime(cfg config.Config) []driver.RuntimeStatus {
 		}
 		out = append(out, d.Status(name, o, ctx))
 	}
-	for name, up := range cfg.Upstreams {
+	for _, name := range sortedUpstreamNames(cfg) {
+		up := cfg.Upstreams[name]
 		d, err := e.Registry.Upstream(up.Type)
 		if err != nil {
 			out = append(out, driver.RuntimeStatus{Name: name, Type: up.Type, State: driver.StateBroken, Summary: err.Error()})
@@ -156,4 +167,22 @@ func (e Engine) SupportedDrivers() (upstreams, outputs []string) {
 
 func fail(title string, err error) runner.Result {
 	return runner.Result{Title: title, Command: "driver registry", Output: err.Error(), OK: false, Status: "error"}
+}
+
+func sortedOutputNames(cfg config.Config) []string {
+	names := make([]string, 0, len(cfg.Outputs))
+	for name := range cfg.Outputs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func sortedUpstreamNames(cfg config.Config) []string {
+	names := make([]string, 0, len(cfg.Upstreams))
+	for name := range cfg.Upstreams {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

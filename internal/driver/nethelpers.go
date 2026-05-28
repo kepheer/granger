@@ -110,6 +110,19 @@ func interfaceStatus(name, typ, iface, service string, caps []Capability, ctx Ap
 	return st
 }
 
+func serviceStatus(name, typ, service string, caps []Capability, ctx ApplyContext) RuntimeStatus {
+	res := ctx.Runner.Run("Status "+typ+" "+name, 5*time.Second, nil, "systemctl", "is-active", service)
+	st := RuntimeStatus{Name: name, Type: typ, Service: service, Capabilities: caps, Results: []runner.Result{res}}
+	if res.OK {
+		st.State = StateHealthy
+		st.Summary = service + " is active"
+	} else {
+		st.State = StatePending
+		st.Summary = service + " is not active"
+	}
+	return st
+}
+
 func outputReturnRoute(ctx ApplyContext) []runner.Result {
 	if ctx.ClientCIDR == "" || ctx.Output.Interface == "" {
 		return nil

@@ -98,9 +98,13 @@ func DefaultRegistry() *Registry {
 	r.RegisterOutput(WireGuardOutput{})
 	r.RegisterOutput(AmneziaWGOutput{})
 	r.RegisterOutput(OpenVPNOutput{})
+	r.RegisterOutput(SingBoxOutput{})
+	r.RegisterOutput(XrayOutput{})
 	r.RegisterUpstream(WireGuardUpstream{})
 	r.RegisterUpstream(AmneziaWGUpstream{})
 	r.RegisterUpstream(OpenVPNUpstream{})
+	r.RegisterUpstream(SingBoxUpstream{})
+	r.RegisterUpstream(XrayUpstream{})
 	return r
 }
 
@@ -149,10 +153,14 @@ func (r *Registry) OutputTypes() []string {
 func BaseContext(cfg config.Config, rr runner.Runner) ApplyContext {
 	outName := ""
 	var out config.Output
-	for name, candidate := range cfg.Outputs {
-		outName = name
-		out = candidate
-		break
+	names := make([]string, 0, len(cfg.Outputs))
+	for name := range cfg.Outputs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) > 0 {
+		outName = names[0]
+		out = cfg.Outputs[outName]
 	}
 	return ApplyContext{
 		Config: cfg, Output: out, OutputName: outName, ClientCIDR: out.Subnet, Runner: rr,

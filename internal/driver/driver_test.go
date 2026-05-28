@@ -5,7 +5,7 @@ import "testing"
 func TestDefaultRegistryIncludesVPNDrivers(t *testing.T) {
 	reg := DefaultRegistry()
 
-	for _, typ := range []string{"wireguard", "amneziawg", "openvpn"} {
+	for _, typ := range []string{"wireguard", "amneziawg", "openvpn", "sing-box", "xray"} {
 		if _, err := reg.Output(typ); err != nil {
 			t.Fatalf("output driver %q is not registered: %v", typ, err)
 		}
@@ -90,5 +90,35 @@ func TestOpenVPNServiceNames(t *testing.T) {
 func TestOpenVPNFallbackServiceName(t *testing.T) {
 	if got, want := openVPNFallbackService("home", "/etc/openvpn/server/home.conf", "tun0"), "openvpn@home.service"; got != want {
 		t.Fatalf("OpenVPN fallback service = %q, want %q", got, want)
+	}
+}
+
+func TestXrayServiceNames(t *testing.T) {
+	if got, want := xrayService("", "proxy", "/etc/granger/upstreams/proxy.json", ""), "xray@proxy.service"; got != want {
+		t.Fatalf("Xray service from config = %q, want %q", got, want)
+	}
+	if got, want := xrayService("", "proxy", "", "tun-xray"), "xray@tun-xray.service"; got != want {
+		t.Fatalf("Xray service from interface = %q, want %q", got, want)
+	}
+	if got, want := xrayService("custom.service", "proxy", "", ""), "custom.service"; got != want {
+		t.Fatalf("explicit Xray service = %q, want %q", got, want)
+	}
+	if got, want := xrayFallbackService(), "xray.service"; got != want {
+		t.Fatalf("Xray fallback service = %q, want %q", got, want)
+	}
+}
+
+func TestSingBoxServiceNames(t *testing.T) {
+	if got, want := singBoxService("", "proxy", "/etc/granger/upstreams/proxy.json", ""), "sing-box@proxy.service"; got != want {
+		t.Fatalf("sing-box service from config = %q, want %q", got, want)
+	}
+	if got, want := singBoxService("", "proxy", "", "tun-sb"), "sing-box@tun-sb.service"; got != want {
+		t.Fatalf("sing-box service from interface = %q, want %q", got, want)
+	}
+	if got, want := singBoxService("custom.service", "proxy", "", ""), "custom.service"; got != want {
+		t.Fatalf("explicit sing-box service = %q, want %q", got, want)
+	}
+	if got, want := singBoxFallbackService(), "sing-box.service"; got != want {
+		t.Fatalf("sing-box fallback service = %q, want %q", got, want)
 	}
 }

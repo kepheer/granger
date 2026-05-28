@@ -58,3 +58,23 @@ func TestValidateRejectsDuplicateExplicitServices(t *testing.T) {
 		t.Fatalf("duplicate service error = %q", err)
 	}
 }
+
+func TestValidateAllowsProxyOutputsWithoutInterface(t *testing.T) {
+	cfg := Config{
+		Outputs: map[string]Output{
+			"xray_public": {
+				Type:    "xray",
+				Service: "xray@public.service",
+			},
+			"singbox_public": {
+				Type:    "sing-box",
+				Service: "sing-box@public.service",
+			},
+		},
+		Upstreams: map[string]Upstream{},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate rejected proxy output without interface: %v", err)
+	}
+}
