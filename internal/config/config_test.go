@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -76,5 +78,39 @@ func TestValidateAllowsProxyOutputsWithoutInterface(t *testing.T) {
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate rejected proxy output without interface: %v", err)
+	}
+}
+
+func TestLoadReadsYAMLConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "granger.yaml")
+	body := []byte(`
+server:
+  public_ip: 203.0.113.10
+outputs:
+  home:
+    type: wireguard
+    interface: wg0
+upstreams:
+  direct:
+    type: direct
+    interface: auto
+rules:
+  - name: default
+    default: true
+    via: direct
+`)
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.PublicIP != "203.0.113.10" {
+		t.Fatalf("PublicIP = %q", cfg.Server.PublicIP)
+	}
+	if cfg.Outputs["home"].Interface != "wg0" {
+		t.Fatalf("home interface = %q", cfg.Outputs["home"].Interface)
 	}
 }

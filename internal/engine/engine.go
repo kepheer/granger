@@ -5,13 +5,17 @@ import (
 	"sort"
 
 	"granger/internal/config"
+	"granger/internal/dns"
 	"granger/internal/driver"
+	"granger/pkg/netfilter"
 	"granger/pkg/runner"
 )
 
 type ApplyPlan struct {
 	DNSRules []driver.DNSRule
 	Results  []runner.Result
+	DryRun   bool
+	Firewall string
 }
 
 type Engine struct {
@@ -79,7 +83,9 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 			res = append(res, d.ApplyRoutes(name, up, outCtx)...)
 		}
 	}
-	return ApplyPlan{DNSRules: e.DNSRules(cfg, ctx), Results: res}
+	dnsRules := e.DNSRules(cfg, ctx)
+	res = append(res, dns.New(e.Runner).Apply(cfg, dnsRules)...)
+	return ApplyPlan{DNSRules: dnsRules, Results: res, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
 }
 
 func (e Engine) DNSRules(cfg config.Config, ctx driver.ApplyContext) []driver.DNSRule {

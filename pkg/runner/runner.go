@@ -21,11 +21,18 @@ type Result struct {
 	Status  string
 }
 
-type Runner struct{}
+type Runner struct {
+	DryRun bool
+}
 
 func New() Runner { return Runner{} }
 
-func (Runner) Run(title string, timeout time.Duration, stdin io.Reader, name string, args ...string) Result {
+func NewDryRun() Runner { return Runner{DryRun: true} }
+
+func (r Runner) Run(title string, timeout time.Duration, stdin io.Reader, name string, args ...string) Result {
+	if r.DryRun {
+		return Result{Title: title, Command: display(name, args...), Output: "(dry run: command not executed)", OK: true, Status: "dry-run"}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)

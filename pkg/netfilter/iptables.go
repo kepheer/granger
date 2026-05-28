@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const Backend = "iptables"
+
 func EnsureAppend(table, chain string, args ...string) string {
 	check := append(iptablesPrefix(table), "-C", chain)
 	check = append(check, args...)

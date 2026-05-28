@@ -1,7 +1,10 @@
 package dns
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"granger/internal/config"
 	"granger/internal/driver"
@@ -13,6 +16,17 @@ type Renderer struct {
 }
 
 func New(r runner.Runner) Renderer { return Renderer{Runner: r} }
+
+func (r Renderer) Apply(cfg config.Config, rules []driver.DNSRule) []runner.Result {
+	body := r.Render(cfg, rules)
+	var res []runner.Result
+	res = append(res, r.writeConfig(config.DNSMasqPath, body))
+	res = append(res, r.Runner.Run("Validate dnsmasq config", 10*time.Second, nil, "dnsmasq", "--test", "--conf-file=/etc/dnsmasq.conf"))
+	if res[len(res)-1].OK {
+		res = append(res, r.Runner.Run("Restart dnsmasq", 30*time.Second, nil, "systemctl", "restart", "dnsmasq.service"))
+	}
+	return res
+}
 
 func (r Renderer) Render(cfg config.Config, rules []driver.DNSRule) string {
 	if cfg.Server.DNSListen == "" {
@@ -56,4 +70,34 @@ func (r Renderer) Render(cfg config.Config, rules []driver.DNSRule) string {
 		}
 	}
 	return b.String()
+}
+
+func (r Renderer) writeConfig(path, body string) runner.Result {
+	if r.Runner.DryRun {
+		return runner.Result{Title: "Write dnsmasq config", Command: path, Output: body, OK: true, Status: "dry-run"}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return runner.Result{Title: "Write dnsmasq config", Command: path, Output: err.Error(), OK: false, Status: "error"}
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".granger-dnsmasq-*")
+	if err != nil {
+		return runner.Result{Title: "Write dnsmasq config", Command: path, Output: err.Error(), OK: false, Status: "error"}
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if _, err := tmp.WriteString(body); err != nil {
+		tmp.Close()
+		return runner.Result{Title: "Write dnsmasq config", Command: path, Output: err.Error(), OK: false, Status: "error"}
+	}
+	if err := tmp.Chmod(0644); err != nil {
+		tmp.Close()
+		return runner.Result{Title: "Write dnsmasq config", Command: path, Output: err.Error(), OK: false, Status: "error"}
+	}
+	if err := tmp.Close(); err != nil {
+		return runner.Result{Title: "Write dnsmasq config", Command: path, Output: err.Error(), OK: false, Status: "error"}
+	}
+	if err := os.Rename(name, path); err != nil {
+		return runner.Result{Title: "Write dnsmasq config", Command: path, Output: err.Error(), OK: false, Status: "error"}
+	}
+	return runner.Result{Title: "Write dnsmasq config", Command: path, Output: "dnsmasq config written", OK: true, Status: "ok"}
 }
