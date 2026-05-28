@@ -9,6 +9,7 @@ import (
 	"granger/internal/config"
 	"granger/internal/engine"
 	"granger/internal/health"
+	"granger/internal/webgui"
 	"granger/pkg/runner"
 )
 
@@ -22,13 +23,14 @@ func main() {
 	h := health.New(r)
 	switch cmd {
 	case "help", "-h", "--help":
-		fmt.Println("usage: granger [apply|health|runtime|drivers|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
+		fmt.Println("usage: granger [apply|health|runtime|drivers|serve-gui [ADDR] [DIR]|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
 		fmt.Println()
 		fmt.Println("commands:")
 		fmt.Println("  apply                 apply declarative routing config")
 		fmt.Println("  health                run health checks")
 		fmt.Println("  runtime               show output/upstream driver runtime states")
 		fmt.Println("  drivers               list registered upstream/output drivers")
+		fmt.Println("  serve-gui [ADDR] [DIR] serve static GUI, default 10.19.84.51:1984 dist/gui")
 		fmt.Println("  restart-output NAME   restart output by config name")
 		fmt.Println("  restart-upstream NAME restart upstream by config name")
 		fmt.Println("  test-domain DOMAIN    resolve/test domain against Granger DNS")
@@ -52,6 +54,17 @@ func main() {
 		cfg := mustConfig()
 		for _, st := range e.Runtime(cfg) {
 			fmt.Printf("%s (%s): %s - %s\n", st.Name, st.Type, st.State, st.Summary)
+		}
+	case "serve-gui":
+		srv := webgui.ConfigFromEnv()
+		if len(os.Args) > 2 {
+			srv.Listen = os.Args[2]
+		}
+		if len(os.Args) > 3 {
+			srv.Dir = os.Args[3]
+		}
+		if err := srv.ListenAndServe(); err != nil {
+			log.Fatal(err)
 		}
 	case "restart-output":
 		if len(os.Args) < 3 {
@@ -78,7 +91,7 @@ func main() {
 			fmt.Printf("[%v] %s\n$ %s\n%s\n\n", res.OK, res.Title, res.Command, res.Output)
 		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: granger [apply|health|runtime|drivers|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
+		fmt.Fprintln(os.Stderr, "usage: granger [apply|health|runtime|drivers|serve-gui [ADDR] [DIR]|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
 		os.Exit(2)
 	}
 }

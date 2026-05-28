@@ -4,7 +4,8 @@ import { writable } from 'svelte/store';
 export const locales = ['en', 'ru'] as const;
 export type Locale = (typeof locales)[number];
 
-const storageKey = 'granger.locale';
+const localeCookieName = '__gr_loc';
+const localeCookieMaxAge = 60 * 60 * 24 * 365;
 
 export const messages = {
 	en: {
@@ -48,10 +49,25 @@ function isLocale(value: string | null): value is Locale {
 	return value === 'en' || value === 'ru';
 }
 
+function readCookie(name: string) {
+	const prefix = `${encodeURIComponent(name)}=`;
+	return (
+		document.cookie
+			.split(';')
+			.map((part) => part.trim())
+			.find((part) => part.startsWith(prefix))
+			?.slice(prefix.length) ?? null
+	);
+}
+
+function writeCookie(name: string, value: string) {
+	document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; path=/; max-age=${localeCookieMaxAge}; samesite=lax`;
+}
+
 function initialLocale(): Locale {
 	if (!browser) return 'en';
 
-	const saved = localStorage.getItem(storageKey);
+	const saved = readCookie(localeCookieName);
 	if (isLocale(saved)) return saved;
 
 	const language = navigator.language.toLowerCase();
@@ -62,7 +78,7 @@ export const locale = writable<Locale>(initialLocale());
 
 if (browser) {
 	locale.subscribe((value) => {
-		localStorage.setItem(storageKey, value);
+		writeCookie(localeCookieName, value);
 		document.documentElement.lang = value;
 	});
 }

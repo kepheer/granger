@@ -17,7 +17,7 @@
 		"@fontsource-variable/onest": "^5.2.11",
 		"@fontsource-variable/unbounded": "^5.2.8",
 		"@internationalized/date": "^3.12.1",
-		"@sveltejs/adapter-auto": "^7.0.1",
+		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.57.0",
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
 		"@tailwindcss/vite": "^4.3.0",
