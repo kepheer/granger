@@ -5,7 +5,7 @@ import (
 
 	"granger/internal/config"
 	"granger/internal/driver"
-	"granger/internal/runner"
+	"granger/pkg/runner"
 )
 
 type ApplyPlan struct {
@@ -30,13 +30,17 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 	ctx := driver.BaseContext(cfg, e.Runner)
 	var res []runner.Result
 	for name, out := range cfg.Outputs {
+		outCtx := ctx
+		outCtx.OutputName = name
+		outCtx.Output = out
+		outCtx.ClientCIDR = out.Subnet
 		d, err := e.Registry.Output(out.Type)
 		if err != nil {
 			res = append(res, fail("Output driver "+name, err))
 			continue
 		}
-		res = append(res, d.GenerateServerConfig(name, out, ctx)...)
-		res = append(res, d.ApplyIngressFirewall(name, out, ctx)...)
+		res = append(res, d.GenerateServerConfig(name, out, outCtx)...)
+		res = append(res, d.ApplyIngressFirewall(name, out, outCtx)...)
 	}
 	for name, up := range cfg.Upstreams {
 		d, err := e.Registry.Upstream(up.Type)
@@ -45,7 +49,13 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 			continue
 		}
 		res = append(res, d.NormalizeConfig(name, up, ctx)...)
-		res = append(res, d.ApplyFirewall(name, up, ctx)...)
+		for outName, out := range cfg.Outputs {
+			outCtx := ctx
+			outCtx.OutputName = outName
+			outCtx.Output = out
+			outCtx.ClientCIDR = out.Subnet
+			res = append(res, d.ApplyFirewall(name, up, outCtx)...)
+		}
 	}
 	for name, up := range cfg.Upstreams {
 		d, err := e.Registry.Upstream(up.Type)
@@ -53,7 +63,13 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 			res = append(res, fail("Route driver "+name, err))
 			continue
 		}
-		res = append(res, d.ApplyRoutes(name, up, ctx)...)
+		for outName, out := range cfg.Outputs {
+			outCtx := ctx
+			outCtx.OutputName = outName
+			outCtx.Output = out
+			outCtx.ClientCIDR = out.Subnet
+			res = append(res, d.ApplyRoutes(name, up, outCtx)...)
+		}
 	}
 	return ApplyPlan{DNSRules: e.DNSRules(cfg, ctx), Results: res}
 }

@@ -37,6 +37,8 @@ type Server struct {
 type Output struct {
 	Type       string   `json:"type"`
 	Interface  string   `json:"interface"`
+	Config     string   `json:"config,omitempty"`
+	Service    string   `json:"service,omitempty"`
 	Subnet     string   `json:"subnet"`
 	ServerIP   string   `json:"server_ip"`
 	ListenPort int      `json:"listen_port"`
@@ -44,14 +46,16 @@ type Output struct {
 }
 
 type Client struct {
-	Name string `json:"name"`
-	IP   string `json:"ip"`
+	Name   string `json:"name"`
+	IP     string `json:"ip"`
+	Config string `json:"config,omitempty"`
 }
 
 type Upstream struct {
 	Type             string   `json:"type"`
 	Interface        string   `json:"interface"`
 	Config           string   `json:"config,omitempty"`
+	Service          string   `json:"service,omitempty"`
 	DNS              []string `json:"dns,omitempty"`
 	Gateway          string   `json:"gateway,omitempty"`
 	FallbackWhenDown string   `json:"fallback_when_down,omitempty"`
@@ -122,9 +126,17 @@ func SaveAtomic(path string, cfg Config) error {
 }
 
 func (c Config) Validate() error {
+	interfaces := map[string]string{}
+	services := map[string]string{}
 	for name, out := range c.Outputs {
 		if out.Type == "" || out.Interface == "" {
 			return errors.New("output " + name + " has empty type/interface")
+		}
+		if err := rememberUnique(interfaces, out.Interface, "output "+name); err != nil {
+			return err
+		}
+		if err := rememberUnique(services, out.Service, "output "+name); err != nil {
+			return err
 		}
 		if out.Subnet != "" {
 			if _, _, err := net.ParseCIDR(out.Subnet); err != nil {
@@ -135,6 +147,12 @@ func (c Config) Validate() error {
 	for name, up := range c.Upstreams {
 		if up.Type == "" {
 			return errors.New("upstream " + name + " has empty type")
+		}
+		if err := rememberUnique(interfaces, up.Interface, "upstream "+name); err != nil {
+			return err
+		}
+		if err := rememberUnique(services, up.Service, "upstream "+name); err != nil {
+			return err
 		}
 	}
 	for _, rule := range c.Rules {
@@ -150,5 +168,16 @@ func (c Config) Validate() error {
 			}
 		}
 	}
+	return nil
+}
+
+func rememberUnique(seen map[string]string, value, owner string) error {
+	if value == "" || value == "auto" {
+		return nil
+	}
+	if prev, ok := seen[value]; ok {
+		return errors.New(owner + " conflicts with " + prev + " on " + value)
+	}
+	seen[value] = owner
 	return nil
 }

@@ -1,8 +1,10 @@
 package health
 
 import (
+	"strconv"
+
 	"granger/internal/config"
-	"granger/internal/runner"
+	"granger/pkg/runner"
 )
 
 type State string
@@ -51,7 +53,7 @@ func (c Checker) Check(cfg config.Config) RuntimeStatus {
 			State:    Healthy,
 			Summary:  "Config is valid",
 			Command:  "config.Validate",
-			Output:   "outputs: " + itoa(len(cfg.Outputs)) + ", upstreams: " + itoa(len(cfg.Upstreams)) + ", rules: " + itoa(len(cfg.Rules)),
+			Output:   "outputs: " + strconv.Itoa(len(cfg.Outputs)) + ", upstreams: " + strconv.Itoa(len(cfg.Upstreams)) + ", rules: " + strconv.Itoa(len(cfg.Rules)),
 			Expected: "valid declarative config",
 			Fix:      "",
 		})
@@ -67,18 +69,4 @@ func (c Checker) Check(cfg config.Config) RuntimeStatus {
 		}
 	}
 	return RuntimeStatus{Overall: overall, Checks: checks}
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
 }

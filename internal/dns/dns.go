@@ -5,7 +5,7 @@ import (
 
 	"granger/internal/config"
 	"granger/internal/driver"
-	"granger/internal/runner"
+	"granger/pkg/runner"
 )
 
 type Renderer struct {

@@ -9,7 +9,7 @@ import (
 	"granger/internal/config"
 	"granger/internal/engine"
 	"granger/internal/health"
-	"granger/internal/runner"
+	"granger/pkg/runner"
 )
 
 func main() {

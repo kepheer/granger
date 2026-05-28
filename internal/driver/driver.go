@@ -5,7 +5,7 @@ import (
 	"sort"
 
 	"granger/internal/config"
-	"granger/internal/runner"
+	"granger/pkg/runner"
 )
 
 type Capability string
@@ -94,7 +94,12 @@ func NewRegistry() *Registry {
 }
 
 func DefaultRegistry() *Registry {
-	return NewRegistry()
+	r := NewRegistry()
+	r.RegisterOutput(WireGuardOutput{})
+	r.RegisterOutput(OpenVPNOutput{})
+	r.RegisterUpstream(WireGuardUpstream{})
+	r.RegisterUpstream(OpenVPNUpstream{})
+	return r
 }
 
 func (r *Registry) RegisterUpstream(d UpstreamDriver) {
