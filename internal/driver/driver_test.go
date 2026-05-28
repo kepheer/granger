@@ -5,7 +5,7 @@ import "testing"
 func TestDefaultRegistryIncludesVPNDrivers(t *testing.T) {
 	reg := DefaultRegistry()
 
-	for _, typ := range []string{"wireguard", "openvpn"} {
+	for _, typ := range []string{"wireguard", "amneziawg", "openvpn"} {
 		if _, err := reg.Output(typ); err != nil {
 			t.Fatalf("output driver %q is not registered: %v", typ, err)
 		}
@@ -21,6 +21,15 @@ func TestWireGuardServiceName(t *testing.T) {
 	}
 	if got, want := wireGuardService("custom.service", "wg0"), "custom.service"; got != want {
 		t.Fatalf("explicit WireGuard service = %q, want %q", got, want)
+	}
+}
+
+func TestAmneziaWGServiceName(t *testing.T) {
+	if got, want := amneziaWGService("", "awg0"), "awg-quick@awg0.service"; got != want {
+		t.Fatalf("default AmneziaWG service = %q, want %q", got, want)
+	}
+	if got, want := amneziaWGService("custom.service", "awg0"), "custom.service"; got != want {
+		t.Fatalf("explicit AmneziaWG service = %q, want %q", got, want)
 	}
 }
 

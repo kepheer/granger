@@ -96,8 +96,10 @@ func NewRegistry() *Registry {
 func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	r.RegisterOutput(WireGuardOutput{})
+	r.RegisterOutput(AmneziaWGOutput{})
 	r.RegisterOutput(OpenVPNOutput{})
 	r.RegisterUpstream(WireGuardUpstream{})
+	r.RegisterUpstream(AmneziaWGUpstream{})
 	r.RegisterUpstream(OpenVPNUpstream{})
 	return r
 }
