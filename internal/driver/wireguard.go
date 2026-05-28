@@ -24,8 +24,8 @@ func (WireGuardOutput) GenerateServerConfig(name string, out config.Output, ctx 
 	return []runner.Result{{Title: "WireGuard server config " + name, Command: out.Config, Output: "config exists", OK: true, Status: "ok"}}
 }
 
-func (WireGuardOutput) GenerateClientConfig(_ string, out config.Output, _ ApplyContext) (string, []runner.Result) {
-	path := firstClientConfig(out)
+func (WireGuardOutput) GenerateClientConfig(_ string, out config.Output, ctx ApplyContext) (string, []runner.Result) {
+	path := firstClientConfig(ctx, out)
 	if path == "" {
 		return "", []runner.Result{{Title: "WireGuard client config", Command: "config", Output: "client config path is empty", OK: false, Status: "error"}}
 	}

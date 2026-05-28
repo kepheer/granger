@@ -21,9 +21,15 @@ const (
 
 type Config struct {
 	Server    Server              `json:"server" yaml:"server"`
+	Users     map[string]User     `json:"users,omitempty" yaml:"users,omitempty"`
 	Outputs   map[string]Output   `json:"outputs" yaml:"outputs"`
 	Upstreams map[string]Upstream `json:"upstreams" yaml:"upstreams"`
 	Rules     []Rule              `json:"rules" yaml:"rules"`
+}
+
+type User struct {
+	DisplayName string `json:"display_name,omitempty" yaml:"display_name,omitempty"`
+	Disabled    bool   `json:"disabled,omitempty" yaml:"disabled,omitempty"`
 }
 
 type Server struct {
@@ -47,9 +53,11 @@ type Output struct {
 }
 
 type Client struct {
-	Name   string `json:"name" yaml:"name"`
-	IP     string `json:"ip" yaml:"ip"`
-	Config string `json:"config,omitempty" yaml:"config,omitempty"`
+	Name     string `json:"name" yaml:"name"`
+	User     string `json:"user,omitempty" yaml:"user,omitempty"`
+	IP       string `json:"ip" yaml:"ip"`
+	Config   string `json:"config,omitempty" yaml:"config,omitempty"`
+	Disabled bool   `json:"disabled,omitempty" yaml:"disabled,omitempty"`
 }
 
 type Upstream struct {
@@ -79,6 +87,7 @@ func Default(publicIP, uplinkIF, uplinkGW string) Config {
 			UplinkIF: uplinkIF,
 			UplinkGW: uplinkGW,
 		},
+		Users:     map[string]User{},
 		Outputs:   map[string]Output{},
 		Upstreams: map[string]Upstream{},
 		Rules:     nil,
@@ -129,6 +138,11 @@ func SaveAtomic(path string, cfg Config) error {
 func (c Config) Validate() error {
 	interfaces := map[string]string{}
 	services := map[string]string{}
+	for name := range c.Users {
+		if name == "" {
+			return errors.New("user has empty name")
+		}
+	}
 	for name, out := range c.Outputs {
 		if out.Type == "" {
 			return errors.New("output " + name + " has empty type")
@@ -146,6 +160,9 @@ func (c Config) Validate() error {
 			if _, _, err := net.ParseCIDR(out.Subnet); err != nil {
 				return err
 			}
+		}
+		if err := c.validateClients(name, out.Clients); err != nil {
+			return err
 		}
 	}
 	for name, up := range c.Upstreams {
@@ -169,6 +186,46 @@ func (c Config) Validate() error {
 		for _, cidr := range rule.CIDRs {
 			if _, _, err := net.ParseCIDR(cidr); err != nil {
 				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (c Config) ClientEnabled(client Client) bool {
+	if client.Disabled {
+		return false
+	}
+	if client.User == "" {
+		return true
+	}
+	user, ok := c.Users[client.User]
+	return ok && !user.Disabled
+}
+
+func (c Config) EnabledClients(out Output) []Client {
+	clients := make([]Client, 0, len(out.Clients))
+	for _, client := range out.Clients {
+		if c.ClientEnabled(client) {
+			clients = append(clients, client)
+		}
+	}
+	return clients
+}
+
+func (c Config) validateClients(outputName string, clients []Client) error {
+	seen := map[string]bool{}
+	for _, client := range clients {
+		if client.Name == "" {
+			return errors.New("output " + outputName + " has client with empty name")
+		}
+		if seen[client.Name] {
+			return errors.New("output " + outputName + " has duplicate client " + client.Name)
+		}
+		seen[client.Name] = true
+		if client.User != "" {
+			if _, ok := c.Users[client.User]; !ok {
+				return errors.New("output " + outputName + " client " + client.Name + " references missing user " + client.User)
 			}
 		}
 	}

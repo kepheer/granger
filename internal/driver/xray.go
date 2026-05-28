@@ -19,8 +19,8 @@ func (XrayOutput) GenerateServerConfig(name string, out config.Output, _ ApplyCo
 	return checkConfigFile("Xray output config "+name, out.Config)
 }
 
-func (XrayOutput) GenerateClientConfig(_ string, out config.Output, _ ApplyContext) (string, []runner.Result) {
-	path := firstClientConfig(out)
+func (XrayOutput) GenerateClientConfig(_ string, out config.Output, ctx ApplyContext) (string, []runner.Result) {
+	path := firstClientConfig(ctx, out)
 	if path == "" {
 		return "", []runner.Result{{Title: "Xray client config", Command: "config", Output: "client config path is empty", OK: false, Status: "error"}}
 	}

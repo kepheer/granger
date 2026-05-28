@@ -24,8 +24,8 @@ func (AmneziaWGOutput) GenerateServerConfig(name string, out config.Output, _ Ap
 	return []runner.Result{{Title: "AmneziaWG server config " + name, Command: out.Config, Output: "config exists", OK: true, Status: "ok"}}
 }
 
-func (AmneziaWGOutput) GenerateClientConfig(_ string, out config.Output, _ ApplyContext) (string, []runner.Result) {
-	path := firstClientConfig(out)
+func (AmneziaWGOutput) GenerateClientConfig(_ string, out config.Output, ctx ApplyContext) (string, []runner.Result) {
+	path := firstClientConfig(ctx, out)
 	if path == "" {
 		return "", []runner.Result{{Title: "AmneziaWG client config", Command: "config", Output: "client config path is empty", OK: false, Status: "error"}}
 	}

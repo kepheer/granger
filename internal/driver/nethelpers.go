@@ -88,8 +88,8 @@ func systemctlWithFallback(ctx ApplyContext, title, action, primary, fallback st
 	return runShell(ctx, title, netfilter.ShellJoin("systemctl", action, primary)+" || "+netfilter.ShellJoin("systemctl", action, fallback))
 }
 
-func firstClientConfig(out config.Output) string {
-	for _, client := range out.Clients {
+func firstClientConfig(ctx ApplyContext, out config.Output) string {
+	for _, client := range ctx.Config.EnabledClients(out) {
 		if client.Config != "" {
 			return client.Config
 		}
