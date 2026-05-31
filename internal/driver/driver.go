@@ -106,6 +106,7 @@ func DefaultRegistry() *Registry {
 	r.RegisterUpstream(AmneziaWGUpstream{})
 	r.RegisterUpstream(OpenVPNUpstream{})
 	r.RegisterUpstream(SingBoxUpstream{})
+	r.RegisterUpstream(SNXRSUpstream{})
 	r.RegisterUpstream(XrayUpstream{})
 	return r
 }

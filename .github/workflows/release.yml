@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build release artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+
+      - name: Test Go
+        run: go test ./...
+
+      - name: Build GUI
+        working-directory: gui
+        run: |
+          npm ci
+          npm run check
+          npm run build
+
+      - name: Build Linux amd64 binary
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          mkdir -p build artifacts
+          go build -trimpath -ldflags="-s -w" -o build/granger ./cmd/granger
+
+      - name: Build tarball
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p "build/granger-${version}/dist"
+          cp build/granger "build/granger-${version}/granger"
+          cp install-granger.sh "build/granger-${version}/install-granger.sh"
+          cp -a dist/gui "build/granger-${version}/dist/gui"
+          tar -C build -czf "artifacts/granger_${version}_linux_amd64.tar.gz" "granger-${version}"
+
+      - name: Build Debian package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          scripts/package-deb.sh "${version}" build/granger dist/gui artifacts
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum * > SHA256SUMS
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" artifacts/* --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" artifacts/* --generate-notes
+          fi

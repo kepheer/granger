@@ -10,7 +10,13 @@
 		type MessageKey
 	} from '$lib/i18n';
 	import { page } from '$app/state';
-	import { CompassIcon, PlugsIcon, SignpostIcon, TrafficSignIcon } from 'phosphor-svelte';
+	import {
+		CompassIcon,
+		PlugsIcon,
+		SignpostIcon,
+		TrafficSignIcon,
+		UsersIcon
+	} from 'phosphor-svelte';
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
 
@@ -36,11 +42,23 @@
 			icon: SignpostIcon
 		},
 		{
+			labelKey: 'nav.users',
+			titleKey: 'users.title',
+			href: '/users',
+			icon: UsersIcon
+		},
+		{
 			labelKey: 'nav.bypasses',
 			titleKey: 'bypasses.title',
 			href: '/bypasses',
 			icon: TrafficSignIcon
 		},
+		{
+			labelKey: 'nav.rules',
+			titleKey: 'rules.title',
+			href: '/rules',
+			icon: TrafficSignIcon
+		}
 	] as const;
 
 	function isActive(href: string, pathname: string) {

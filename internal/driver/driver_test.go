@@ -10,7 +10,7 @@ func TestDefaultRegistryIncludesVPNDrivers(t *testing.T) {
 			t.Fatalf("output driver %q is not registered: %v", typ, err)
 		}
 	}
-	for _, typ := range []string{"amneziawg", "direct", "interface", "openvpn", "sing-box", "wireguard", "xray"} {
+	for _, typ := range []string{"amneziawg", "direct", "interface", "openvpn", "sing-box", "snx-rs", "wireguard", "xray"} {
 		if _, err := reg.Upstream(typ); err != nil {
 			t.Fatalf("upstream driver %q is not registered: %v", typ, err)
 		}

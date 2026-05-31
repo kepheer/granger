@@ -13,7 +13,10 @@ const config = {
 			assets: '../dist/gui',
 			fallback: 'index.html',
 			precompress: true
-		})
+		}),
+		prerender: {
+			handleUnseenRoutes: 'ignore'
+		}
 	}
 };
 

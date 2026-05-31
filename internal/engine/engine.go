@@ -52,6 +52,10 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 	}
 	for _, name := range upstreamNames {
 		up := cfg.Upstreams[name]
+		if !up.IsEnabled() {
+			res = append(res, runner.Result{Title: "Upstream driver " + name, Command: "config", Output: "upstream is disabled", OK: true, Status: "disabled"})
+			continue
+		}
 		d, err := e.Registry.Upstream(up.Type)
 		if err != nil {
 			res = append(res, fail("Upstream driver "+name, err))
@@ -69,6 +73,9 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 	}
 	for _, name := range upstreamNames {
 		up := cfg.Upstreams[name]
+		if !up.IsEnabled() {
+			continue
+		}
 		d, err := e.Registry.Upstream(up.Type)
 		if err != nil {
 			res = append(res, fail("Route driver "+name, err))
@@ -92,6 +99,9 @@ func (e Engine) DNSRules(cfg config.Config, ctx driver.ApplyContext) []driver.DN
 	var out []driver.DNSRule
 	for _, name := range sortedUpstreamNames(cfg) {
 		up := cfg.Upstreams[name]
+		if !up.IsEnabled() {
+			continue
+		}
 		d, err := e.Registry.Upstream(up.Type)
 		if err != nil {
 			continue
@@ -157,6 +167,9 @@ func (e Engine) Runtime(cfg config.Config) []driver.RuntimeStatus {
 	}
 	for _, name := range sortedUpstreamNames(cfg) {
 		up := cfg.Upstreams[name]
+		if !up.IsEnabled() {
+			continue
+		}
 		d, err := e.Registry.Upstream(up.Type)
 		if err != nil {
 			out = append(out, driver.RuntimeStatus{Name: name, Type: up.Type, State: driver.StateBroken, Summary: err.Error()})

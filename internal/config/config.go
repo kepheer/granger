@@ -61,13 +61,18 @@ type Client struct {
 }
 
 type Upstream struct {
-	Type             string   `json:"type" yaml:"type"`
-	Interface        string   `json:"interface" yaml:"interface"`
-	Config           string   `json:"config,omitempty" yaml:"config,omitempty"`
-	Service          string   `json:"service,omitempty" yaml:"service,omitempty"`
-	DNS              []string `json:"dns,omitempty" yaml:"dns,omitempty"`
-	Gateway          string   `json:"gateway,omitempty" yaml:"gateway,omitempty"`
-	FallbackWhenDown string   `json:"fallback_when_down,omitempty" yaml:"fallback_when_down,omitempty"`
+	Type             string              `json:"type" yaml:"type"`
+	Interface        string              `json:"interface" yaml:"interface"`
+	Config           string              `json:"config,omitempty" yaml:"config,omitempty"`
+	Service          string              `json:"service,omitempty" yaml:"service,omitempty"`
+	Enabled          *bool               `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	DNS              []string            `json:"dns,omitempty" yaml:"dns,omitempty"`
+	Gateway          string              `json:"gateway,omitempty" yaml:"gateway,omitempty"`
+	FallbackWhenDown string              `json:"fallback_when_down,omitempty" yaml:"fallback_when_down,omitempty"`
+	RouteMode        string              `json:"route_mode,omitempty" yaml:"route_mode,omitempty"`
+	AuthFlow         []AuthStep          `json:"auth_flow,omitempty" yaml:"auth_flow,omitempty"`
+	PromptPatterns   map[string][]string `json:"prompt_patterns,omitempty" yaml:"prompt_patterns,omitempty"`
+	Install          *InstallSpec        `json:"install,omitempty" yaml:"install,omitempty"`
 }
 
 type Rule struct {
@@ -78,6 +83,21 @@ type Rule struct {
 	DomainFallbackVia string   `json:"domain_fallback_via,omitempty" yaml:"domain_fallback_via,omitempty"`
 	CIDRFallback      string   `json:"cidr_fallback,omitempty" yaml:"cidr_fallback,omitempty"`
 	Default           bool     `json:"default,omitempty" yaml:"default,omitempty"`
+}
+
+type AuthStep struct {
+	Name      string   `json:"name,omitempty" yaml:"name,omitempty"`
+	Type      string   `json:"type" yaml:"type"`
+	Label     string   `json:"label,omitempty" yaml:"label,omitempty"`
+	Secret    bool     `json:"secret,omitempty" yaml:"secret,omitempty"`
+	Prompts   []string `json:"prompts,omitempty" yaml:"prompts,omitempty"`
+	TimeoutMS int      `json:"timeout_ms,omitempty" yaml:"timeout_ms,omitempty"`
+}
+
+type InstallSpec struct {
+	Package string   `json:"package,omitempty" yaml:"package,omitempty"`
+	Command []string `json:"command,omitempty" yaml:"command,omitempty"`
+	Managed bool     `json:"managed,omitempty" yaml:"managed,omitempty"`
 }
 
 func Default(publicIP, uplinkIF, uplinkGW string) Config {
@@ -169,6 +189,9 @@ func (c Config) Validate() error {
 		if up.Type == "" {
 			return errors.New("upstream " + name + " has empty type")
 		}
+		if err := validateAuthFlow(name, up.AuthFlow); err != nil {
+			return err
+		}
 		if err := rememberUnique(interfaces, up.Interface, "upstream "+name); err != nil {
 			return err
 		}
@@ -190,6 +213,10 @@ func (c Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (u Upstream) IsEnabled() bool {
+	return u.Enabled == nil || *u.Enabled
 }
 
 func (c Config) ClientEnabled(client Client) bool {
@@ -249,5 +276,28 @@ func rememberUnique(seen map[string]string, value, owner string) error {
 		return errors.New(owner + " conflicts with " + prev + " on " + value)
 	}
 	seen[value] = owner
+	return nil
+}
+
+func validateAuthFlow(upstreamName string, flow []AuthStep) error {
+	seen := map[string]bool{}
+	for _, step := range flow {
+		if step.Type == "" {
+			return errors.New("upstream " + upstreamName + " auth flow has empty step type")
+		}
+		switch step.Type {
+		case "username", "password", "otp", "sms", "email", "custom":
+		default:
+			return errors.New("upstream " + upstreamName + " auth flow has unsupported step type " + step.Type)
+		}
+		key := step.Name
+		if key == "" {
+			key = step.Type
+		}
+		if seen[key] {
+			return errors.New("upstream " + upstreamName + " auth flow has duplicate step " + key)
+		}
+		seen[key] = true
+	}
 	return nil
 }
