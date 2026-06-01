@@ -32,7 +32,49 @@
 		}
 	} as const;
 
-	const protocols = ['WireGuard', 'OpenVPN', 'AmneziaWG', 'Xray'];
+	const protocols = [
+		{ type: 'wireguard', label: 'WireGuard', name: 'home_wg', iface: 'wg0', subnet: '10.66.66.0/24', port: 51820 },
+		{ type: 'openvpn', label: 'OpenVPN', name: 'home_ovpn', iface: 'tun0', subnet: '10.77.0.0/24', port: 1194 },
+		{ type: 'amneziawg', label: 'AmneziaWG', name: 'home_awg', iface: 'awg0', subnet: '10.88.0.0/24', port: 51821 },
+		{ type: 'xray', label: 'Xray', name: 'home_xray', iface: '', subnet: '', port: 443 },
+		{ type: 'sing-box', label: 'sing-box', name: 'home_singbox', iface: '', subnet: '', port: 443 }
+	];
+
+	let selected = $state(protocols[0]);
+	let name = $state(protocols[0].name);
+	let iface = $state(protocols[0].iface);
+	let subnet = $state(protocols[0].subnet);
+	let port = $state(protocols[0].port);
+	let message = $state('');
+	let saving = $state(false);
+
+	function choose(protocol: (typeof protocols)[number]) {
+		selected = protocol;
+		name = protocol.name;
+		iface = protocol.iface;
+		subnet = protocol.subnet;
+		port = protocol.port;
+	}
+
+	async function create() {
+		saving = true;
+		try {
+			const response = await fetch('/api/outputs', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', 'x-granger-request': '1' },
+				body: JSON.stringify({
+					name,
+					output: { type: selected.type, interface: iface, subnet, listen_port: Number(port), clients: [] }
+				})
+			});
+			if (!response.ok) throw new Error(await response.text());
+			window.location.href = '/entrypoints';
+		} catch (error) {
+			message = error instanceof Error ? error.message : String(error);
+		} finally {
+			saving = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -49,16 +91,17 @@
 		<Card.Content class="space-y-5 pt-6">
 			<div class="flex flex-wrap gap-2">
 				{#each protocols as protocol}
-					<Button variant="outline" size="sm">{protocol}</Button>
+					<Button variant={selected.type === protocol.type ? 'default' : 'outline'} size="sm" onclick={() => choose(protocol)}>{protocol.label}</Button>
 				{/each}
 			</div>
 			<div class="grid gap-3 md:grid-cols-2">
-				<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].name}<Input placeholder="home_wg" /></label>
-				<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].iface}<Input placeholder="wg0" /></label>
-				<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].subnet}<Input placeholder="10.66.66.0/24" /></label>
-				<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].port}<Input placeholder="51820" /></label>
+				<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].name}<Input bind:value={name} placeholder="home_wg" /></label>
+				<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].iface}<Input bind:value={iface} placeholder="wg0" /></label>
+				<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].subnet}<Input bind:value={subnet} placeholder="10.66.66.0/24" /></label>
+				<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].port}<Input bind:value={port} type="number" placeholder="51820" /></label>
 			</div>
-			<Button><PlusIcon />{copy[$locale].create}</Button>
+			{#if message}<p class="text-sm text-red-300">{message}</p>{/if}
+			<Button disabled={saving} onclick={create}><PlusIcon />{copy[$locale].create}</Button>
 		</Card.Content>
 	</Card.Root>
 </section>

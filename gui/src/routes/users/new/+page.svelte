@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -25,6 +26,37 @@
 			create: 'Создать пользователя'
 		}
 	} as const;
+
+	let displayName = $state('');
+	let outputs = $state<string[]>([]);
+	let selectedOutput = $state('');
+	let message = $state('');
+
+	onMount(async () => {
+		try {
+			const response = await fetch('/api/config');
+			if (!response.ok) return;
+			const body = await response.json();
+			outputs = Object.keys(body.config?.outputs ?? {});
+			selectedOutput = outputs[0] ?? '';
+		} catch {
+			// Frontend-only development mode.
+		}
+	});
+
+	async function create() {
+		try {
+			const response = await fetch('/api/users', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', 'x-granger-request': '1' },
+				body: JSON.stringify({ display_name: displayName, output: selectedOutput })
+			});
+			if (!response.ok) throw new Error(await response.text());
+			window.location.href = '/entrypoints';
+		} catch (error) {
+			message = error instanceof Error ? error.message : String(error);
+		}
+	}
 </script>
 
 <svelte:head>
@@ -39,15 +71,17 @@
 	</div>
 	<Card.Root class="rounded-lg">
 		<Card.Content class="space-y-5 pt-6">
-			<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].name}<Input placeholder="Alice" /></label>
+			<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].name}<Input bind:value={displayName} placeholder="Alice" /></label>
 			<div class="space-y-2">
 				<div class="text-xs text-muted-foreground">{copy[$locale].access}</div>
 				<div class="flex flex-wrap gap-2">
-					<Button variant="outline" size="sm">home_wg</Button>
-					<Button variant="outline" size="sm">guest_ovpn</Button>
+					{#each outputs as output}
+						<Button variant={selectedOutput === output ? 'default' : 'outline'} size="sm" onclick={() => (selectedOutput = output)}>{output}</Button>
+					{/each}
 				</div>
 			</div>
-			<Button><UserCirclePlusIcon />{copy[$locale].create}</Button>
+			{#if message}<p class="text-sm text-red-300">{message}</p>{/if}
+			<Button onclick={create}><UserCirclePlusIcon />{copy[$locale].create}</Button>
 		</Card.Content>
 	</Card.Root>
 </section>

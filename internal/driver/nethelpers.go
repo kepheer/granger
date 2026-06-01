@@ -30,6 +30,10 @@ func routeTableID(name string) int {
 	return 10000 + int(h.Sum32()%20000)
 }
 
+func RouteTableID(name string) int {
+	return routeTableID(name)
+}
+
 func fwmark(name string) string {
 	return fmt.Sprintf("0x%x", routeTableID(name))
 }
@@ -163,19 +167,20 @@ func applyUpstreamFirewall(name string, up config.Upstream, ctx ApplyContext) []
 	mark := fwmark(name)
 	var res []runner.Result
 	res = append(res, ctx.Runner.RunSoft("Create ipset "+setName, 10*time.Second, nil, "ipset", "create", setName, "hash:ip", "family", "inet", "timeout", "86400", "-exist"))
-	res = append(res, runShell(ctx, "Mark domain set "+name, netfilter.EnsureAppend("mangle", "PREROUTING", "-i", ctx.Output.Interface, "-m", "set", "--match-set", setName, "dst", "-j", "MARK", "--set-mark", mark)))
+	res = append(res, ctx.Runner.RunSoft("Flush ipset "+setName, 10*time.Second, nil, "ipset", "flush", setName))
+	res = append(res, runShell(ctx, "Mark domain set "+name, netfilter.EnsureAppend("mangle", netfilter.MangleChain, "-i", ctx.Output.Interface, "-m", "set", "--match-set", setName, "dst", "-j", "MARK", "--set-mark", mark)))
 	for _, rule := range ctx.Config.Rules {
 		if rule.Via != name {
 			continue
 		}
 		for _, cidr := range rule.CIDRs {
-			res = append(res, runShell(ctx, "Mark CIDR "+cidr+" via "+name, netfilter.EnsureAppend("mangle", "PREROUTING", "-i", ctx.Output.Interface, "-d", cidr, "-j", "MARK", "--set-mark", mark)))
+			res = append(res, runShell(ctx, "Mark CIDR "+cidr+" via "+name, netfilter.EnsureAppend("mangle", netfilter.MangleChain, "-i", ctx.Output.Interface, "-d", cidr, "-j", "MARK", "--set-mark", mark)))
 		}
 	}
 	res = append(res,
-		runShell(ctx, "FORWARD output -> "+name, netfilter.EnsureInsert("", "FORWARD", 1, "-i", ctx.Output.Interface, "-o", up.Interface, "-j", "ACCEPT")),
-		runShell(ctx, "FORWARD "+name+" -> output", netfilter.EnsureInsert("", "FORWARD", 2, "-i", up.Interface, "-o", ctx.Output.Interface, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT")),
-		runShell(ctx, "NAT "+name, netfilter.EnsureAppend("nat", "POSTROUTING", "-s", ctx.ClientCIDR, "-o", up.Interface, "-j", "MASQUERADE")),
+		runShell(ctx, "FORWARD output -> "+name, netfilter.EnsureAppend("", netfilter.FilterChain, "-i", ctx.Output.Interface, "-o", up.Interface, "-j", "ACCEPT")),
+		runShell(ctx, "FORWARD "+name+" -> output", netfilter.EnsureAppend("", netfilter.FilterChain, "-i", up.Interface, "-o", ctx.Output.Interface, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT")),
+		runShell(ctx, "NAT "+name, netfilter.EnsureAppend("nat", netfilter.NATChain, "-s", ctx.ClientCIDR, "-o", up.Interface, "-j", "MASQUERADE")),
 	)
 	return res
 }
@@ -187,6 +192,10 @@ func renderDomainDNS(name string, up config.Upstream, rules []config.Rule) []DNS
 			continue
 		}
 		for _, domain := range rule.Domains {
+			domain = normalizeDomain(domain)
+			if domain == "" {
+				continue
+			}
 			if len(up.DNS) == 0 {
 				out = append(out, DNSRule{Domain: domain, Set: ipsetName(name)})
 				continue
@@ -197,6 +206,18 @@ func renderDomainDNS(name string, up config.Upstream, rules []config.Rule) []DNS
 		}
 	}
 	return out
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.TrimSpace(domain)
+	if domain == "" || strings.HasPrefix(domain, "#") {
+		return ""
+	}
+	if before, _, ok := strings.Cut(domain, "#"); ok {
+		domain = strings.TrimSpace(before)
+	}
+	domain = strings.TrimPrefix(strings.ToLower(domain), "*.")
+	return strings.TrimSuffix(domain, ".")
 }
 
 func ensureIPRule(ctx ApplyContext, match, table, priority string) runner.Result {

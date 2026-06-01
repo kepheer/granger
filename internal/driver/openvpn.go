@@ -17,10 +17,8 @@ func (OpenVPNOutput) GenerateServerConfig(name string, out config.Output, _ Appl
 	if out.Config == "" {
 		return nil
 	}
-	if _, err := os.Stat(out.Config); err != nil {
-		return []runner.Result{{Title: "OpenVPN server config " + name, Command: out.Config, Output: err.Error(), OK: false, Status: "error"}}
-	}
-	return []runner.Result{{Title: "OpenVPN server config " + name, Command: out.Config, Output: "config exists", OK: true, Status: "ok"}}
+	profile := openVPNProfileName(name, out.Config, out.Interface)
+	return []runner.Result{activateConfig("Activate OpenVPN server config "+name, out.Config, "/etc/openvpn/server/"+profile+".conf")}
 }
 
 func (OpenVPNOutput) GenerateClientConfig(_ string, out config.Output, ctx ApplyContext) (string, []runner.Result) {
@@ -67,10 +65,8 @@ func (OpenVPNUpstream) NormalizeConfig(name string, up config.Upstream, _ ApplyC
 	if up.Config == "" {
 		return nil
 	}
-	if _, err := os.Stat(up.Config); err != nil {
-		return []runner.Result{{Title: "OpenVPN upstream config " + name, Command: up.Config, Output: err.Error(), OK: false, Status: "error"}}
-	}
-	return []runner.Result{{Title: "OpenVPN upstream config " + name, Command: up.Config, Output: "config exists", OK: true, Status: "ok"}}
+	profile := openVPNProfileName(name, up.Config, up.Interface)
+	return []runner.Result{activateConfig("Activate OpenVPN upstream config "+name, up.Config, "/etc/openvpn/client/"+profile+".conf")}
 }
 
 func (OpenVPNUpstream) Start(name string, up config.Upstream, ctx ApplyContext) []runner.Result {

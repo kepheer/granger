@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -30,6 +31,8 @@ type Config struct {
 type User struct {
 	DisplayName string `json:"display_name,omitempty" yaml:"display_name,omitempty"`
 	Disabled    bool   `json:"disabled,omitempty" yaml:"disabled,omitempty"`
+	Output      string `json:"output,omitempty" yaml:"output,omitempty"`
+	Client      string `json:"client,omitempty" yaml:"client,omitempty"`
 }
 
 type Server struct {
@@ -44,6 +47,7 @@ type Server struct {
 type Output struct {
 	Type       string   `json:"type" yaml:"type"`
 	Interface  string   `json:"interface" yaml:"interface"`
+	Enabled    *bool    `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 	Config     string   `json:"config,omitempty" yaml:"config,omitempty"`
 	Service    string   `json:"service,omitempty" yaml:"service,omitempty"`
 	Subnet     string   `json:"subnet" yaml:"subnet"`
@@ -53,11 +57,12 @@ type Output struct {
 }
 
 type Client struct {
-	Name     string `json:"name" yaml:"name"`
-	User     string `json:"user,omitempty" yaml:"user,omitempty"`
-	IP       string `json:"ip" yaml:"ip"`
-	Config   string `json:"config,omitempty" yaml:"config,omitempty"`
-	Disabled bool   `json:"disabled,omitempty" yaml:"disabled,omitempty"`
+	Name      string `json:"name" yaml:"name"`
+	User      string `json:"user,omitempty" yaml:"user,omitempty"`
+	IP        string `json:"ip" yaml:"ip"`
+	Config    string `json:"config,omitempty" yaml:"config,omitempty"`
+	PublicKey string `json:"public_key,omitempty" yaml:"public_key,omitempty"`
+	Disabled  bool   `json:"disabled,omitempty" yaml:"disabled,omitempty"`
 }
 
 type Upstream struct {
@@ -73,6 +78,8 @@ type Upstream struct {
 	AuthFlow         []AuthStep          `json:"auth_flow,omitempty" yaml:"auth_flow,omitempty"`
 	PromptPatterns   map[string][]string `json:"prompt_patterns,omitempty" yaml:"prompt_patterns,omitempty"`
 	Install          *InstallSpec        `json:"install,omitempty" yaml:"install,omitempty"`
+	Default          bool                `json:"default,omitempty" yaml:"default,omitempty"`
+	BlockFallback    bool                `json:"block_fallback,omitempty" yaml:"block_fallback,omitempty"`
 }
 
 type Rule struct {
@@ -135,6 +142,14 @@ func SaveAtomic(path string, cfg Config) error {
 		return err
 	}
 	b = append(b, '\n')
+	if _, err := os.Stat(path); err == nil {
+		backup := path + ".bak." + time.Now().Format("20060102-150405")
+		if current, err := os.ReadFile(path); err == nil {
+			if err := os.WriteFile(backup, current, 0600); err != nil {
+				return err
+			}
+		}
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".granger-*")
 	if err != nil {
 		return err
@@ -161,6 +176,13 @@ func (c Config) Validate() error {
 	for name := range c.Users {
 		if name == "" {
 			return errors.New("user has empty name")
+		}
+	}
+	for name, user := range c.Users {
+		if user.Output != "" {
+			if _, ok := c.Outputs[user.Output]; !ok {
+				return errors.New("user " + name + " references missing output " + user.Output)
+			}
 		}
 	}
 	for name, out := range c.Outputs {
@@ -198,13 +220,40 @@ func (c Config) Validate() error {
 		if err := rememberUnique(services, up.Service, "upstream "+name); err != nil {
 			return err
 		}
+		if up.FallbackWhenDown != "" {
+			if _, ok := c.Upstreams[up.FallbackWhenDown]; !ok {
+				return errors.New("upstream " + name + " references missing fallback " + up.FallbackWhenDown)
+			}
+		}
 	}
+	defaultUpstream := ""
+	for name, up := range c.Upstreams {
+		if !up.Default {
+			continue
+		}
+		if defaultUpstream != "" {
+			return errors.New("upstream " + name + " conflicts with " + defaultUpstream + ": only one default upstream is allowed")
+		}
+		defaultUpstream = name
+	}
+	defaultRule := ""
 	for _, rule := range c.Rules {
 		if rule.Via == "" {
 			return errors.New("rule " + rule.Name + " has empty via")
 		}
 		if _, ok := c.Upstreams[rule.Via]; !ok {
 			return errors.New("rule " + rule.Name + " references missing upstream " + rule.Via)
+		}
+		if rule.DomainFallbackVia != "" {
+			if _, ok := c.Upstreams[rule.DomainFallbackVia]; !ok {
+				return errors.New("rule " + rule.Name + " references missing domain fallback " + rule.DomainFallbackVia)
+			}
+		}
+		if rule.Default {
+			if defaultRule != "" {
+				return errors.New("rule " + rule.Name + " conflicts with " + defaultRule + ": only one default rule is allowed")
+			}
+			defaultRule = rule.Name
 		}
 		for _, cidr := range rule.CIDRs {
 			if _, _, err := net.ParseCIDR(cidr); err != nil {
@@ -217,6 +266,10 @@ func (c Config) Validate() error {
 
 func (u Upstream) IsEnabled() bool {
 	return u.Enabled == nil || *u.Enabled
+}
+
+func (o Output) IsEnabled() bool {
+	return o.Enabled == nil || *o.Enabled
 }
 
 func (c Config) ClientEnabled(client Client) bool {

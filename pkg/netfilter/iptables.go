@@ -7,6 +7,26 @@ import (
 
 const Backend = "iptables"
 
+const (
+	MangleChain = "GRANGER_PREROUTING"
+	FilterChain = "GRANGER_FORWARD"
+	NATChain    = "GRANGER_POSTROUTING"
+)
+
+func ResetScript() string {
+	return strings.Join([]string{
+		ensureChain("mangle", MangleChain),
+		ensureChain("", FilterChain),
+		ensureChain("nat", NATChain),
+		EnsureAppend("mangle", "PREROUTING", "-j", MangleChain),
+		EnsureAppend("", "FORWARD", "-j", FilterChain),
+		EnsureAppend("nat", "POSTROUTING", "-j", NATChain),
+		ShellJoin(append(iptablesPrefix("mangle"), "-F", MangleChain)...),
+		ShellJoin(append(iptablesPrefix(""), "-F", FilterChain)...),
+		ShellJoin(append(iptablesPrefix("nat"), "-F", NATChain)...),
+	}, "\n")
+}
+
 func EnsureAppend(table, chain string, args ...string) string {
 	check := append(iptablesPrefix(table), "-C", chain)
 	check = append(check, args...)
@@ -40,4 +60,8 @@ func iptablesPrefix(table string) []string {
 		return []string{"iptables"}
 	}
 	return []string{"iptables", "-t", table}
+}
+
+func ensureChain(table, chain string) string {
+	return ShellJoin(append(iptablesPrefix(table), "-N", chain)...) + " 2>/dev/null || true"
 }

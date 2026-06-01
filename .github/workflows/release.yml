@@ -51,9 +51,10 @@ jobs:
       - name: Build tarball
         run: |
           version="${GITHUB_REF_NAME#v}"
-          mkdir -p "build/granger-${version}/dist"
+          mkdir -p "build/granger-${version}/dist" "build/granger-${version}/scripts"
           cp build/granger "build/granger-${version}/granger"
-          cp install-granger.sh "build/granger-${version}/install-granger.sh"
+          cp scripts/install-granger.sh "build/granger-${version}/scripts/install-granger.sh"
+          cp scripts/uninstall-granger.sh "build/granger-${version}/scripts/uninstall-granger.sh"
           cp -a dist/gui "build/granger-${version}/dist/gui"
           tar -C build -czf "artifacts/granger_${version}_linux_amd64.tar.gz" "granger-${version}"
 

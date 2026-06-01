@@ -1,7 +1,9 @@
 package driver
 
 import (
+	"net"
 	"os"
+	"strings"
 	"time"
 
 	"granger/internal/config"
@@ -68,10 +70,10 @@ func (AmneziaWGUpstream) NormalizeConfig(name string, up config.Upstream, _ Appl
 	if up.Config == "" {
 		return nil
 	}
-	if _, err := os.Stat(up.Config); err != nil {
-		return []runner.Result{{Title: "AmneziaWG upstream config " + name, Command: up.Config, Output: err.Error(), OK: false, Status: "error"}}
+	if err := normalizeQuickConfig(up.Config); err != nil {
+		return []runner.Result{{Title: "Normalize AmneziaWG upstream config " + name, Command: up.Config, Output: err.Error(), OK: false, Status: "error"}}
 	}
-	return []runner.Result{{Title: "AmneziaWG upstream config " + name, Command: up.Config, Output: "config exists", OK: true, Status: "ok"}}
+	return []runner.Result{activateConfig("Activate AmneziaWG upstream config "+name, up.Config, "/etc/amnezia/amneziawg/"+safeName(up.Interface)+".conf")}
 }
 
 func (AmneziaWGUpstream) Start(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
@@ -91,7 +93,36 @@ func (d AmneziaWGUpstream) Status(name string, up config.Upstream, ctx ApplyCont
 }
 
 func (AmneziaWGUpstream) ApplyRoutes(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return applyUpstreamRoutes(name, up, ctx)
+	res := endpointUplinkRoute(name, up, ctx)
+	return append(res, applyUpstreamRoutes(name, up, ctx)...)
+}
+
+func endpointUplinkRoute(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
+	host := quickEndpointHost(up.Config)
+	if host == "" || ctx.UplinkIF == "" || ctx.UplinkIF == "auto" || ctx.UplinkGW == "" || ctx.UplinkGW == "auto" {
+		return nil
+	}
+	return []runner.Result{ctx.Runner.RunSoft("Keep AmneziaWG endpoint on uplink "+name, 10*time.Second, nil, "ip", "route", "replace", host, "via", ctx.UplinkGW, "dev", ctx.UplinkIF)}
+}
+
+func quickEndpointHost(path string) string {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(key), "Endpoint") {
+			continue
+		}
+		endpoint := strings.TrimSpace(value)
+		host, _, err := net.SplitHostPort(endpoint)
+		if err == nil {
+			return host
+		}
+		return strings.Trim(endpoint, "[]")
+	}
+	return ""
 }
 
 func (AmneziaWGUpstream) ApplyFirewall(name string, up config.Upstream, ctx ApplyContext) []runner.Result {

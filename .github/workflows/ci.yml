@@ -69,6 +69,7 @@ jobs:
 
       - name: Check shell syntax
         run: |
-          bash -n install-granger.sh
+          sh -n scripts/install-granger.sh
+          sh -n scripts/uninstall-granger.sh
+          bash -n scripts/install-granger.sh
           bash -n scripts/package-deb.sh
-

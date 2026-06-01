@@ -71,7 +71,7 @@ Priority: optional
 Architecture: ${ARCH}
 Installed-Size: ${installed_size}
 Maintainer: Granger Maintainers <maintainers@granger.local>
-Depends: ca-certificates, curl, jq, iproute2, nftables, iptables, dnsmasq, dnsutils, systemd, procps
+Depends: ca-certificates, curl, gnupg, jq, iproute2, nftables, iptables, ipset, dnsmasq, dnsutils, unzip, psmisc, software-properties-common, python3-launchpadlib, dkms, build-essential, systemd, procps, wireguard-tools
 Description: Private VPN routing control plane
  Granger is a self-hosted routing orchestrator for VPN entrypoints,
  upstreams, bypass rules, DNS, and runtime health.

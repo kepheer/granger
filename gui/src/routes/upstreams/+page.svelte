@@ -125,6 +125,7 @@
 
 	onMount(() => {
 		void loadProtocols();
+		void loadUpstreams();
 	});
 
 	async function loadProtocols() {
@@ -139,13 +140,34 @@
 		}
 	}
 
+	async function loadUpstreams() {
+		try {
+			const response = await fetch('/api/config');
+			if (!response.ok) throw new Error(response.statusText);
+			const body = await response.json();
+			const configured = body.config?.upstreams ?? {};
+			upstreams = Object.entries(configured).map(([name, value]) => {
+				const item = value as Record<string, unknown>;
+				return {
+					name,
+					type: String(item.type ?? ''),
+					iface: String(item.interface ?? ''),
+					config: String(item.config ?? 'managed configuration'),
+					status: item.enabled === false ? 'disabled' : 'enabled'
+				};
+			});
+		} catch {
+			// Keep preview data while running the frontend without the Go backend.
+		}
+	}
+
 	async function installProtocol(name: string) {
 		installing = name;
 		protocolMessage = '';
 		try {
 			const response = await fetch('/api/protocols/install', {
 				method: 'POST',
-				headers: { 'content-type': 'application/json' },
+				headers: { 'content-type': 'application/json', 'x-granger-request': '1' },
 				body: JSON.stringify({ name })
 			});
 			const body = (await response.json()) as ApiResponse<ProtocolStatus>;
@@ -160,7 +182,7 @@
 		}
 	}
 
-	const upstreams = [
+	let upstreams = $state([
 		{
 			name: 'direct_ru',
 			type: 'direct',
@@ -182,7 +204,7 @@
 			config: '/etc/granger/upstreams/media.json',
 			status: 'pending'
 		}
-	];
+	]);
 </script>
 
 <svelte:head>

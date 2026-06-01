@@ -68,10 +68,10 @@ func (WireGuardUpstream) NormalizeConfig(name string, up config.Upstream, _ Appl
 	if up.Config == "" {
 		return nil
 	}
-	if _, err := os.Stat(up.Config); err != nil {
-		return []runner.Result{{Title: "WireGuard upstream config " + name, Command: up.Config, Output: err.Error(), OK: false, Status: "error"}}
+	if err := normalizeQuickConfig(up.Config); err != nil {
+		return []runner.Result{{Title: "Normalize WireGuard upstream config " + name, Command: up.Config, Output: err.Error(), OK: false, Status: "error"}}
 	}
-	return []runner.Result{{Title: "WireGuard upstream config " + name, Command: up.Config, Output: "config exists", OK: true, Status: "ok"}}
+	return []runner.Result{activateConfig("Activate WireGuard upstream config "+name, up.Config, "/etc/wireguard/"+safeName(up.Interface)+".conf")}
 }
 
 func (WireGuardUpstream) Start(name string, up config.Upstream, ctx ApplyContext) []runner.Result {

@@ -116,21 +116,22 @@ func (SNXRSUpstream) ApplyFirewall(name string, up config.Upstream, ctx ApplyCon
 	mark := fwmark(name)
 	res := []runner.Result{
 		ctx.Runner.RunSoft("Create ipset "+setName, 10*time.Second, nil, "ipset", "create", setName, "hash:ip", "family", "inet", "timeout", "86400", "-exist"),
-		runShell(ctx, "Mark SNX-RS domain set "+name, netfilter.EnsureAppend("mangle", "PREROUTING", "-i", ctx.Output.Interface, "-m", "set", "--match-set", setName, "dst", "-j", "MARK", "--set-mark", mark)),
+		ctx.Runner.RunSoft("Flush ipset "+setName, 10*time.Second, nil, "ipset", "flush", setName),
+		runShell(ctx, "Mark SNX-RS domain set "+name, netfilter.EnsureAppend("mangle", netfilter.MangleChain, "-i", ctx.Output.Interface, "-m", "set", "--match-set", setName, "dst", "-j", "MARK", "--set-mark", mark)),
 	}
 	for _, rule := range ctx.Config.Rules {
 		if rule.Via != name {
 			continue
 		}
 		for _, cidr := range rule.CIDRs {
-			res = append(res, runShell(ctx, "Mark SNX-RS CIDR "+cidr, netfilter.EnsureAppend("mangle", "PREROUTING", "-i", ctx.Output.Interface, "-d", cidr, "-j", "MARK", "--set-mark", mark)))
+			res = append(res, runShell(ctx, "Mark SNX-RS CIDR "+cidr, netfilter.EnsureAppend("mangle", netfilter.MangleChain, "-i", ctx.Output.Interface, "-d", cidr, "-j", "MARK", "--set-mark", mark)))
 		}
 	}
 	if snxInterfaceUp(up, ctx) {
 		res = append(res,
-			runShell(ctx, "FORWARD output -> "+name, netfilter.EnsureInsert("", "FORWARD", 1, "-i", ctx.Output.Interface, "-o", up.Interface, "-j", "ACCEPT")),
-			runShell(ctx, "FORWARD "+name+" -> output", netfilter.EnsureInsert("", "FORWARD", 2, "-i", up.Interface, "-o", ctx.Output.Interface, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT")),
-			runShell(ctx, "NAT "+name, netfilter.EnsureAppend("nat", "POSTROUTING", "-s", ctx.ClientCIDR, "-o", up.Interface, "-j", "MASQUERADE")),
+			runShell(ctx, "FORWARD output -> "+name, netfilter.EnsureAppend("", netfilter.FilterChain, "-i", ctx.Output.Interface, "-o", up.Interface, "-j", "ACCEPT")),
+			runShell(ctx, "FORWARD "+name+" -> output", netfilter.EnsureAppend("", netfilter.FilterChain, "-i", up.Interface, "-o", ctx.Output.Interface, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT")),
+			runShell(ctx, "NAT "+name, netfilter.EnsureAppend("nat", netfilter.NATChain, "-s", ctx.ClientCIDR, "-o", up.Interface, "-j", "MASQUERADE")),
 		)
 	}
 	return res

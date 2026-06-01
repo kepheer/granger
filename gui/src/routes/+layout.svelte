@@ -14,8 +14,7 @@
 		CompassIcon,
 		PlugsIcon,
 		SignpostIcon,
-		TrafficSignIcon,
-		UsersIcon
+		GitBranchIcon
 	} from 'phosphor-svelte';
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
@@ -42,22 +41,10 @@
 			icon: SignpostIcon
 		},
 		{
-			labelKey: 'nav.users',
-			titleKey: 'users.title',
-			href: '/users',
-			icon: UsersIcon
-		},
-		{
-			labelKey: 'nav.bypasses',
-			titleKey: 'bypasses.title',
-			href: '/bypasses',
-			icon: TrafficSignIcon
-		},
-		{
 			labelKey: 'nav.rules',
 			titleKey: 'rules.title',
 			href: '/rules',
-			icon: TrafficSignIcon
+			icon: GitBranchIcon
 		}
 	] as const;
 

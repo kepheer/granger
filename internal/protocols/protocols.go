@@ -38,6 +38,7 @@ type Installer interface {
 	DisplayName() string
 	Check(runner.Runner) Status
 	Install(runner.Runner) []runner.Result
+	Uninstall(runner.Runner) []runner.Result
 }
 
 type Manager struct {
@@ -71,6 +72,17 @@ func (m Manager) Install(name string) (Status, []runner.Result, error) {
 		return before, []runner.Result{res}, nil
 	}
 	results := installer.Install(m.Runner)
+	after := installer.Check(m.Runner)
+	after.Commands = results
+	return after, results, nil
+}
+
+func (m Manager) Uninstall(name string) (Status, []runner.Result, error) {
+	installer, ok := Find(name)
+	if !ok {
+		return Status{}, nil, errors.New("unknown protocol installer: " + name)
+	}
+	results := installer.Uninstall(m.Runner)
 	after := installer.Check(m.Runner)
 	after.Commands = results
 	return after, results, nil
@@ -131,6 +143,10 @@ func (i aptInstaller) Install(r runner.Runner) []runner.Result {
 	return results
 }
 
+func (i aptInstaller) Uninstall(r runner.Runner) []runner.Result {
+	return []runner.Result{aptRemove(r, "Remove "+i.display, i.packages...)}
+}
+
 type amneziaWGInstaller struct{}
 
 func (amneziaWGInstaller) Name() string        { return "amneziawg" }
@@ -167,6 +183,10 @@ func (i amneziaWGInstaller) Install(r runner.Runner) []runner.Result {
 		aptInstall(r, "Install AmneziaWG", "amneziawg"),
 	)
 	return results
+}
+
+func (i amneziaWGInstaller) Uninstall(r runner.Runner) []runner.Result {
+	return []runner.Result{aptRemove(r, "Remove AmneziaWG", "amneziawg")}
 }
 
 type singBoxInstaller struct{}
@@ -206,6 +226,10 @@ func (i singBoxInstaller) Install(r runner.Runner) []runner.Result {
 	return results
 }
 
+func (i singBoxInstaller) Uninstall(r runner.Runner) []runner.Result {
+	return []runner.Result{aptRemove(r, "Remove sing-box", "sing-box")}
+}
+
 type snxRSInstaller struct{}
 
 func (snxRSInstaller) Name() string        { return "snx-rs" }
@@ -240,6 +264,10 @@ func (i snxRSInstaller) Install(r runner.Runner) []runner.Result {
 	return results
 }
 
+func (i snxRSInstaller) Uninstall(r runner.Runner) []runner.Result {
+	return []runner.Result{aptRemove(r, "Remove SNX-RS", "snx-rs")}
+}
+
 type xrayInstaller struct{}
 
 func (xrayInstaller) Name() string        { return "xray" }
@@ -267,6 +295,10 @@ func (i xrayInstaller) Install(r runner.Runner) []runner.Result {
 		r.Run("Install Xray", installTimeout, nil, "bash", "/var/lib/granger/installers/xray-install-release.sh", "install", "-u", "root"),
 	)
 	return results
+}
+
+func (i xrayInstaller) Uninstall(r runner.Runner) []runner.Result {
+	return []runner.Result{r.Run("Remove Xray", installTimeout, nil, "bash", "/var/lib/granger/installers/xray-install-release.sh", "remove")}
 }
 
 func checkBinaries(r runner.Runner, display string, binaries []string) []runner.Result {
@@ -300,6 +332,11 @@ func failed(results []runner.Result) bool {
 
 func aptInstall(r runner.Runner, title string, packages ...string) runner.Result {
 	args := append([]string{"DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=a", "apt-get", "install", "-y", "--no-install-recommends"}, packages...)
+	return r.Run(title, installTimeout, nil, "env", args...)
+}
+
+func aptRemove(r runner.Runner, title string, packages ...string) runner.Result {
+	args := append([]string{"DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=a", "apt-get", "remove", "-y"}, packages...)
 	return r.Run(title, installTimeout, nil, "env", args...)
 }
 

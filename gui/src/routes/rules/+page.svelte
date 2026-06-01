@@ -33,7 +33,7 @@
 
 	const copy = {
 		en: {
-			title: 'Rules',
+			title: 'Routing',
 			description:
 				'Build routing as a graph: entrypoints feed rules, rules choose upstreams, and fallback/DNS nodes explain what happens when a tunnel is down.',
 			addNode: 'Add node',
@@ -45,14 +45,18 @@
 			type: 'Type',
 			domains: 'Domains',
 			cidrs: 'CIDRs',
+			dns: 'DNS resolvers',
 			via: 'Via / target',
+			fallback: 'Fallback upstream',
+			defaultUpstream: 'Default upstream',
+			blockFallback: 'Block traffic when fallback is unavailable',
 			statusReady: 'Graph ready',
 			statusSaved: 'Graph saved',
 			statusDryRun: 'Dry-run finished',
 			statusError: 'Graph action failed'
 		},
 		ru: {
-			title: 'Правила',
+			title: 'Маршрутизация',
 			description:
 				'Собирайте маршрутизацию как граф: подключения входят в правила, правила выбирают апстримы, а fallback/DNS-узлы показывают, что произойдет при недоступном туннеле.',
 			addNode: 'Добавить узел',
@@ -64,7 +68,11 @@
 			type: 'Тип',
 			domains: 'Домены',
 			cidrs: 'CIDR',
+			dns: 'DNS-резолверы',
 			via: 'Через / цель',
+			fallback: 'Фоллбэк-апстрим',
+			defaultUpstream: 'Апстрим по умолчанию',
+			blockFallback: 'Не пропускать трафик через фоллбэк',
 			statusReady: 'Граф готов',
 			statusSaved: 'Граф сохранен',
 			statusDryRun: 'План проверен',
@@ -220,12 +228,29 @@
 		});
 	}
 
+	function selectedBool(key: string) {
+		const raw = selectedNode?.data?.raw;
+		return Boolean(raw && typeof raw === 'object' && (raw as Record<string, unknown>)[key]);
+	}
+
+	function updateSelectedBool(key: string, value: boolean) {
+		nodes = nodes.map((node) => {
+			if (node.id !== selectedId) return node;
+			const raw =
+				node.data?.raw && typeof node.data.raw === 'object'
+					? { ...(node.data.raw as Record<string, unknown>) }
+					: {};
+			raw[key] = value;
+			return { ...node, data: { ...node.data, raw } };
+		});
+	}
+
 	async function saveGraph() {
 		try {
 			const payload = toPayload();
 			const response = await fetch('/api/routing/graph', {
 				method: 'POST',
-				headers: { 'content-type': 'application/json' },
+				headers: { 'content-type': 'application/json', 'x-granger-request': '1' },
 				body: JSON.stringify(payload)
 			});
 			if (!response.ok) throw new Error(await response.text());
@@ -237,7 +262,7 @@
 
 	async function dryRun() {
 		try {
-			const response = await fetch('/api/routing/dry-run', { method: 'POST' });
+			const response = await fetch('/api/routing/dry-run', { method: 'POST', headers: { 'x-granger-request': '1' } });
 			if (!response.ok) throw new Error(await response.text());
 			status = copy[$locale].statusDryRun;
 		} catch (error) {
@@ -285,8 +310,8 @@
 		<Card.Root class="overflow-hidden rounded-lg">
 			<Card.Content class="h-[640px] p-0">
 				<SvelteFlow
-					{nodes}
-					{edges}
+					bind:nodes
+					bind:edges
 					fitView
 					proOptions={{ hideAttribution: true }}
 					onnodeclick={(event) => selectNode(event.node.id)}
@@ -324,33 +349,53 @@
 							<Input value={String(selectedNode.data?.label ?? '')} oninput={(event) => updateSelectedLabel(event.currentTarget.value)} />
 						</label>
 						<label class="grid gap-1.5 text-xs text-muted-foreground">
+							{copy[$locale].fallback}
+							<Input
+								value={selectedRawValue('domain_fallback_via') || selectedRawValue('fallback_when_down')}
+								placeholder="direct"
+								oninput={(event) =>
+									updateSelectedRaw(
+										String(selectedNode.data?.kind) === 'rule'
+											? 'domain_fallback_via'
+											: 'fallback_when_down',
+										event.currentTarget.value
+									)}
+							/>
+						</label>
+						{#if String(selectedNode.data?.kind) === 'upstream'}
+							<Button variant={selectedBool('default') ? 'default' : 'outline'} size="sm" onclick={() => updateSelectedBool('default', !selectedBool('default'))}>
+								{copy[$locale].defaultUpstream}
+							</Button>
+							<Button variant={selectedBool('block_fallback') ? 'destructive' : 'outline'} size="sm" onclick={() => updateSelectedBool('block_fallback', !selectedBool('block_fallback'))}>
+								{copy[$locale].blockFallback}
+							</Button>
+							<label class="grid gap-1.5 text-xs text-muted-foreground">
+								{copy[$locale].dns}
+								<Textarea
+									value={selectedRawValue('dns')}
+									placeholder="1.1.1.1&#10;9.9.9.9"
+									oninput={(event) => updateSelectedRaw('dns', event.currentTarget.value, true)}
+								/>
+							</label>
+						{/if}
+						<label class="grid gap-1.5 text-xs text-muted-foreground">
 							{copy[$locale].type}
 							<Input value={String(selectedNode.data?.kind ?? '')} readonly />
 						</label>
-						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							{copy[$locale].domains}
-							<Textarea
-								value={selectedRawValue('domains')}
-								placeholder="example.org&#10;media.example"
-								oninput={(event) => updateSelectedRaw('domains', event.currentTarget.value, true)}
-							/>
-						</label>
-						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							{copy[$locale].cidrs}
-							<Textarea
-								value={selectedRawValue('cidrs')}
-								placeholder="10.44.0.0/16"
-								oninput={(event) => updateSelectedRaw('cidrs', event.currentTarget.value, true)}
-							/>
-						</label>
-						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							{copy[$locale].via}
-							<Input
-								value={selectedRawValue('via')}
-								placeholder="default_awg"
-								oninput={(event) => updateSelectedRaw('via', event.currentTarget.value)}
-							/>
-						</label>
+						{#if String(selectedNode.data?.kind) === 'rule'}
+							<label class="grid gap-1.5 text-xs text-muted-foreground">
+								{copy[$locale].domains}
+								<Textarea value={selectedRawValue('domains')} placeholder="example.org&#10;*.media.example" oninput={(event) => updateSelectedRaw('domains', event.currentTarget.value, true)} />
+							</label>
+							<label class="grid gap-1.5 text-xs text-muted-foreground">
+								{copy[$locale].cidrs}
+								<Textarea value={selectedRawValue('cidrs')} placeholder="10.44.0.0/16" oninput={(event) => updateSelectedRaw('cidrs', event.currentTarget.value, true)} />
+							</label>
+							<label class="grid gap-1.5 text-xs text-muted-foreground">
+								{copy[$locale].via}
+								<Input value={selectedRawValue('via')} placeholder="default_awg" oninput={(event) => updateSelectedRaw('via', event.currentTarget.value)} />
+							</label>
+						{/if}
 					{:else}
 						<p class="text-sm text-muted-foreground">{copy[$locale].noSelection}</p>
 					{/if}

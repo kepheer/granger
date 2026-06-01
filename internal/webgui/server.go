@@ -1,6 +1,8 @@
 package webgui
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,6 +17,8 @@ import (
 	"granger/internal/config"
 	"granger/internal/engine"
 	"granger/internal/protocols"
+	"granger/internal/provision"
+	grruntime "granger/internal/runtime"
 	"granger/internal/snx"
 	"granger/pkg/runner"
 )
@@ -140,6 +144,18 @@ type upstreamPayload struct {
 	ConfigName   string          `json:"config_name,omitempty"`
 }
 
+type outputPayload struct {
+	Name         string        `json:"name"`
+	Output       config.Output `json:"output"`
+	InlineConfig string        `json:"inline_config,omitempty"`
+	ConfigName   string        `json:"config_name,omitempty"`
+}
+
+type userPayload struct {
+	DisplayName string `json:"display_name"`
+	Output      string `json:"output"`
+}
+
 type snxPayload struct {
 	Inputs map[string]string `json:"inputs"`
 }
@@ -168,15 +184,91 @@ type routingGraph struct {
 func (a apiServer) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/config", a.handleConfig)
+	mux.HandleFunc("/dashboard", a.handleDashboard)
 	mux.HandleFunc("/runtime", a.handleRuntime)
 	mux.HandleFunc("/upstreams", a.handleUpstreams)
 	mux.HandleFunc("/upstreams/", a.handleUpstream)
+	mux.HandleFunc("/outputs", a.handleOutputs)
+	mux.HandleFunc("/outputs/", a.handleOutput)
+	mux.HandleFunc("/profiles/", a.handleProfile)
+	mux.HandleFunc("/users", a.handleUsers)
+	mux.HandleFunc("/users/", a.handleUser)
 	mux.HandleFunc("/snx/", a.handleSNX)
 	mux.HandleFunc("/routing/graph", a.handleRoutingGraph)
 	mux.HandleFunc("/routing/dry-run", a.handleRoutingDryRun)
 	mux.HandleFunc("/protocols", a.handleProtocols)
 	mux.HandleFunc("/protocols/install", a.handleProtocolInstall)
-	return mux
+	mux.HandleFunc("/protocols/uninstall", a.handleProtocolUninstall)
+	return requireMutationHeader(mux)
+}
+
+func requireMutationHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.Header.Get("X-Granger-Request") != "1" {
+			writeErrorText(w, http.StatusForbidden, "missing CSRF request header")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (a apiServer) handleProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/profiles/"), "/"), "/")
+	if len(parts) != 2 {
+		writeErrorText(w, http.StatusNotFound, "expected /api/profiles/{output}/{client}")
+		return
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	out, ok := cfg.Outputs[parts[0]]
+	if !ok {
+		writeErrorText(w, http.StatusNotFound, "unknown output")
+		return
+	}
+	for _, client := range out.Clients {
+		if client.Name != parts[1] {
+			continue
+		}
+		if !cfg.ClientEnabled(client) {
+			writeErrorText(w, http.StatusForbidden, "client profile is revoked")
+			return
+		}
+		body, err := os.ReadFile(client.Config)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+safeConfigName(client.Name)+`.conf"`)
+		_, _ = w.Write(body)
+		return
+	}
+	writeErrorText(w, http.StatusNotFound, "unknown client profile")
+}
+
+func (a apiServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: grruntime.Collect(cfg, a.runner, a.engine)})
 }
 
 func (a apiServer) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -237,12 +329,20 @@ func (a apiServer) handleUpstreams(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	results, err := a.ensureProtocol(up.Type)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error(), Results: results})
+		return
+	}
 	cfg.Upstreams[name] = up
-	if err := config.SaveAtomic(config.Path, cfg); err != nil {
+	if err := saveConfig(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, apiResponse{OK: true, Config: &cfg})
+	if up.IsEnabled() {
+		results = append(results, a.engine.SetUpstreamEnabled(name, true, cfg)...)
+	}
+	writeJSON(w, http.StatusCreated, apiResponse{OK: true, Config: &cfg, Results: results})
 }
 
 func (a apiServer) handleUpstream(w http.ResponseWriter, r *http.Request) {
@@ -277,11 +377,11 @@ func (a apiServer) handleUpstream(w http.ResponseWriter, r *http.Request) {
 		}
 		up.Enabled = &body.Enabled
 		cfg.Upstreams[name] = up
-		if err := config.SaveAtomic(config.Path, cfg); err != nil {
+		if err := saveConfig(cfg); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg})
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg, Results: a.engine.SetUpstreamEnabled(name, body.Enabled, cfg)})
 		return
 	}
 	if len(parts) == 2 && parts[1] == "config" {
@@ -303,18 +403,27 @@ func (a apiServer) handleUpstream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cfg.Upstreams[name] = next
-		if err := config.SaveAtomic(config.Path, cfg); err != nil {
+		if err := saveConfig(cfg); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg})
 	case http.MethodDelete:
-		delete(cfg.Upstreams, name)
-		if err := config.SaveAtomic(config.Path, cfg); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
+		if err := canDeleteUpstream(cfg, name); err != nil {
+			writeError(w, http.StatusConflict, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg})
+		disabled := false
+		up.Enabled = &disabled
+		cfg.Upstreams[name] = up
+		results := a.engine.SetUpstreamEnabled(name, false, cfg)
+		delete(cfg.Upstreams, name)
+		if err := saveConfig(cfg); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+		results = append(results, a.uninstallProtocolIfUnused(r, cfg, up.Type)...)
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg, Results: results})
 	default:
 		methodNotAllowed(w)
 	}
@@ -358,11 +467,261 @@ func (a apiServer) handleUpstreamConfig(w http.ResponseWriter, r *http.Request, 
 	}
 	up.Config = path
 	cfg.Upstreams[name] = up
-	if err := config.SaveAtomic(config.Path, cfg); err != nil {
+	if err := saveConfig(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg})
+}
+
+func (a apiServer) handleOutputs(w http.ResponseWriter, r *http.Request) {
+	cfg, err := loadConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: cfg.Outputs})
+	case http.MethodPost:
+		var payload outputPayload
+		if err := readJSON(r, &payload); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		name := safeConfigName(payload.Name)
+		if name == "" {
+			writeErrorText(w, http.StatusBadRequest, "output name is required")
+			return
+		}
+		if _, ok := cfg.Outputs[name]; ok {
+			writeErrorText(w, http.StatusConflict, "output already exists")
+			return
+		}
+		results, err := a.ensureProtocol(payload.Output.Type)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error(), Results: results})
+			return
+		}
+		out, err := prepareOutputConfig(name, payload)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if cfg.Outputs == nil {
+			cfg.Outputs = map[string]config.Output{}
+		}
+		if err := provision.EnsureOutput(name, &out); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		cfg.Outputs[name] = out
+		if err := saveConfig(cfg); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if out.IsEnabled() {
+			results = append(results, a.engine.SetOutputEnabled(name, true, cfg)...)
+		}
+		writeJSON(w, http.StatusCreated, apiResponse{OK: true, Config: &cfg, Results: results})
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (a apiServer) handleOutput(w http.ResponseWriter, r *http.Request) {
+	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/outputs/"), "/")
+	parts := strings.Split(rest, "/")
+	name := safeConfigName(parts[0])
+	cfg, err := loadConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	out, ok := cfg.Outputs[name]
+	if !ok {
+		writeErrorText(w, http.StatusNotFound, "unknown output")
+		return
+	}
+	if len(parts) == 2 && parts[1] == "enable" {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		out.Enabled = &body.Enabled
+		cfg.Outputs[name] = out
+		if err := saveConfig(cfg); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg, Results: a.engine.SetOutputEnabled(name, body.Enabled, cfg)})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: out})
+	case http.MethodPut:
+		var payload outputPayload
+		if err := readJSON(r, &payload); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		next, err := prepareOutputConfig(name, payload)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		cfg.Outputs[name] = next
+		if err := saveConfig(cfg); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg})
+	case http.MethodDelete:
+		if err := canDeleteOutput(cfg, name); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+		disabled := false
+		out.Enabled = &disabled
+		cfg.Outputs[name] = out
+		results := a.engine.SetOutputEnabled(name, false, cfg)
+		delete(cfg.Outputs, name)
+		if err := saveConfig(cfg); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+		results = append(results, a.uninstallProtocolIfUnused(r, cfg, out.Type)...)
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg, Results: results})
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (a apiServer) handleUsers(w http.ResponseWriter, r *http.Request) {
+	cfg, err := loadConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: cfg.Users})
+	case http.MethodPost:
+		var payload userPayload
+		if err := readJSON(r, &payload); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if strings.TrimSpace(payload.DisplayName) == "" {
+			writeErrorText(w, http.StatusBadRequest, "user display name is required")
+			return
+		}
+		if payload.Output != "" {
+			if _, ok := cfg.Outputs[payload.Output]; !ok {
+				writeErrorText(w, http.StatusBadRequest, "unknown user output")
+				return
+			}
+		}
+		id := "usr_" + randomID(6)
+		if cfg.Users == nil {
+			cfg.Users = map[string]config.User{}
+		}
+		cfg.Users[id] = config.User{DisplayName: strings.TrimSpace(payload.DisplayName), Output: payload.Output}
+		if payload.Output != "" {
+			if err := provision.IssueUser(&cfg, id); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+		}
+		if err := saveConfig(cfg); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		results := []runner.Result{}
+		if payload.Output != "" {
+			results = append(results, a.engine.RestartOutput(payload.Output, cfg)...)
+		}
+		writeJSON(w, http.StatusCreated, apiResponse{OK: true, Config: &cfg, Data: map[string]string{"id": id}, Results: results})
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (a apiServer) handleUser(w http.ResponseWriter, r *http.Request) {
+	id := safeConfigName(strings.Trim(strings.TrimPrefix(r.URL.Path, "/users/"), "/"))
+	cfg, err := loadConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	user, ok := cfg.Users[id]
+	if !ok {
+		writeErrorText(w, http.StatusNotFound, "unknown user")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: user})
+	case http.MethodPut:
+		var payload struct {
+			DisplayName string `json:"display_name"`
+			Output      string `json:"output"`
+			Disabled    bool   `json:"disabled"`
+		}
+		if err := readJSON(r, &payload); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if strings.TrimSpace(payload.DisplayName) != "" {
+			user.DisplayName = strings.TrimSpace(payload.DisplayName)
+		}
+		if payload.Output != "" && payload.Output != user.Output {
+			writeErrorText(w, http.StatusBadRequest, "moving an issued profile between outputs is not supported; revoke it and issue a new profile")
+			return
+		}
+		user.Disabled = payload.Disabled
+		cfg.Users[id] = user
+		if err := provision.SetUserDisabled(&cfg, id, payload.Disabled); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if err := saveConfig(cfg); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg, Results: a.engine.RestartOutput(user.Output, cfg)})
+	case http.MethodDelete:
+		if err := provision.RevokeUser(&cfg, id); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		delete(cfg.Users, id)
+		for outputName, out := range cfg.Outputs {
+			clients := out.Clients[:0]
+			for _, client := range out.Clients {
+				if client.User != id {
+					clients = append(clients, client)
+				}
+			}
+			out.Clients = clients
+			cfg.Outputs[outputName] = out
+		}
+		if err := saveConfig(cfg); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg, Results: a.engine.RestartOutput(user.Output, cfg)})
+	default:
+		methodNotAllowed(w)
+	}
 }
 
 func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
@@ -465,7 +824,7 @@ func (a apiServer) handleRoutingGraph(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if err := config.SaveAtomic(config.Path, next); err != nil {
+		if err := saveConfig(next); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -522,6 +881,35 @@ func (a apiServer) handleProtocolInstall(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, httpStatus, apiResponse{OK: ok, Results: results, Data: status})
 }
 
+func (a apiServer) handleProtocolUninstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if protocolInUse(cfg, body.Name) {
+		writeErrorText(w, http.StatusConflict, "protocol is still referenced by configured upstreams or outputs")
+		return
+	}
+	status, results, err := protocols.New(a.runner).Uninstall(body.Name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResponse{OK: allResultsOK(results), Results: results, Data: status})
+}
+
 func (a apiServer) handleProtocols(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -544,6 +932,97 @@ func (a apiServer) prepareUpstreamConfig(name string, payload upstreamPayload) (
 		return up, errors.New("upstream type is required")
 	}
 	return up, nil
+}
+
+func (a apiServer) ensureProtocol(name string) ([]runner.Result, error) {
+	switch name {
+	case "", "direct", "interface":
+		return nil, nil
+	}
+	installer, ok := protocols.Find(name)
+	if !ok {
+		return nil, errors.New("unknown protocol installer: " + name)
+	}
+	if installer.Check(a.runner).Installed {
+		return nil, nil
+	}
+	_, results, err := protocols.New(a.runner).Install(name)
+	if err != nil {
+		return results, err
+	}
+	if !allResultsOK(results) {
+		return results, errors.New("protocol installation failed: " + name)
+	}
+	return results, nil
+}
+
+func (a apiServer) uninstallProtocolIfUnused(r *http.Request, cfg config.Config, name string) []runner.Result {
+	if r.URL.Query().Get("uninstall_protocol") != "true" || protocolInUse(cfg, name) {
+		return nil
+	}
+	_, results, _ := protocols.New(a.runner).Uninstall(name)
+	return results
+}
+
+func prepareOutputConfig(name string, payload outputPayload) (config.Output, error) {
+	out := payload.Output
+	if out.Config == "" && strings.TrimSpace(payload.InlineConfig) != "" {
+		path, err := writeInlineConfig(config.OutputsDir, name, payload.ConfigName, payload.InlineConfig)
+		if err != nil {
+			return out, err
+		}
+		out.Config = path
+	}
+	if out.Type == "" {
+		return out, errors.New("output type is required")
+	}
+	return out, nil
+}
+
+func protocolInUse(cfg config.Config, name string) bool {
+	for _, out := range cfg.Outputs {
+		if out.Type == name {
+			return true
+		}
+	}
+	for _, up := range cfg.Upstreams {
+		if up.Type == name {
+			return true
+		}
+	}
+	return false
+}
+
+func canDeleteUpstream(cfg config.Config, name string) error {
+	for _, rule := range cfg.Rules {
+		if rule.Via == name || rule.DomainFallbackVia == name {
+			return errors.New("upstream is still referenced by routing rule " + rule.Name)
+		}
+	}
+	for upstreamName, up := range cfg.Upstreams {
+		if up.FallbackWhenDown == name {
+			return errors.New("upstream is still referenced as fallback by " + upstreamName)
+		}
+	}
+	return nil
+}
+
+func canDeleteOutput(cfg config.Config, name string) error {
+	for userID, user := range cfg.Users {
+		if user.Output == name {
+			return errors.New("output still has issued profile " + userID)
+		}
+	}
+	return nil
+}
+
+func allResultsOK(results []runner.Result) bool {
+	for _, result := range results {
+		if !result.OK {
+			return false
+		}
+	}
+	return true
 }
 
 func buildRoutingGraph(cfg config.Config) routingGraph {
@@ -673,6 +1152,13 @@ func loadConfig() (config.Config, error) {
 	return cfg, err
 }
 
+func saveConfig(cfg config.Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	return config.SaveAtomic(config.Path, cfg)
+}
+
 func readJSON(r *http.Request, dst any) error {
 	defer r.Body.Close()
 	dec := json.NewDecoder(io.LimitReader(r.Body, 4<<20))
@@ -711,15 +1197,19 @@ func safeConfigName(name string) string {
 }
 
 func writeUpstreamInlineConfig(upstreamName, requestedName, body string) (string, error) {
+	return writeInlineConfig(config.UpstreamsDir, upstreamName, requestedName, body)
+}
+
+func writeInlineConfig(root, profileName, requestedName, body string) (string, error) {
 	if strings.TrimSpace(body) == "" {
 		return "", errors.New("inline config is empty")
 	}
 	name := safeConfigName(requestedName)
 	if name == "" {
-		name = safeConfigName(upstreamName) + ".conf"
+		name = safeConfigName(profileName) + ".conf"
 	}
-	dst := filepath.Join(config.UpstreamsDir, name)
-	cleanRoot, err := filepath.Abs(config.UpstreamsDir)
+	dst := filepath.Join(root, name)
+	cleanRoot, err := filepath.Abs(root)
 	if err != nil {
 		return "", err
 	}
@@ -730,10 +1220,10 @@ func writeUpstreamInlineConfig(upstreamName, requestedName, body string) (string
 	if cleanDst != cleanRoot && !strings.HasPrefix(cleanDst, cleanRoot+string(os.PathSeparator)) {
 		return "", errors.New("config path escapes upstream directory")
 	}
-	if err := os.MkdirAll(config.UpstreamsDir, 0700); err != nil {
+	if err := os.MkdirAll(root, 0700); err != nil {
 		return "", err
 	}
-	tmp, err := os.CreateTemp(config.UpstreamsDir, ".upload-*")
+	tmp, err := os.CreateTemp(root, ".upload-*")
 	if err != nil {
 		return "", err
 	}
@@ -754,6 +1244,14 @@ func writeUpstreamInlineConfig(upstreamName, requestedName, body string) (string
 		return "", err
 	}
 	return cleanDst, nil
+}
+
+func randomID(bytes int) string {
+	buf := make([]byte, bytes)
+	if _, err := rand.Read(buf); err != nil {
+		return hex.EncodeToString([]byte(time.Now().Format(time.RFC3339Nano)))
+	}
+	return hex.EncodeToString(buf)
 }
 
 func ioReadAllLimit(r io.Reader, limit int64) ([]byte, error) {
