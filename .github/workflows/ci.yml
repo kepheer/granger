@@ -72,4 +72,3 @@ jobs:
           sh -n scripts/install-granger.sh
           sh -n scripts/uninstall-granger.sh
           bash -n scripts/install-granger.sh
-          bash -n scripts/package-deb.sh

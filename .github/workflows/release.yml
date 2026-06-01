@@ -58,11 +58,6 @@ jobs:
           cp -a dist/gui "build/granger-${version}/dist/gui"
           tar -C build -czf "artifacts/granger_${version}_linux_amd64.tar.gz" "granger-${version}"
 
-      - name: Build Debian package
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          scripts/package-deb.sh "${version}" build/granger dist/gui artifacts
-
       - name: Generate checksums
         run: |
           cd artifacts
