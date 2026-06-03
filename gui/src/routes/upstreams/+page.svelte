@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
-	import { locale } from '$lib/i18n';
 	import { ArrowClockwiseIcon, CheckCircleIcon, PlusIcon, WarningCircleIcon } from 'phosphor-svelte';
 
 	type ProtocolStatus = {
@@ -21,52 +20,27 @@
 	};
 
 	const copy = {
-		en: {
-			title: 'Upstreams',
-			description:
-				'Upstreams are exits. Granger sends selected traffic through direct uplink, VPN tunnels, Xray, or sing-box according to bypass rules.',
-			add: 'Add upstream',
-			name: 'Name',
-			type: 'Type',
-			iface: 'Interface',
-			config: 'Config',
-			status: 'Status',
-			enabled: 'enabled',
-			disabled: 'disabled',
-			pending: 'pending',
-			hint: 'Click an upstream to inspect routes, DNS, service state, and access controls.',
-			packages: 'Protocol packages',
-			packagesHint:
-				'Install only runtime packages here. Tunnel configs, interfaces, routes, and access rules are configured separately.',
-			installed: 'Installed',
-			install: 'Install',
-			manual: 'Manual source required',
-			unavailable: 'Installer unavailable in dev mode',
-			refresh: 'Refresh'
-		},
-		ru: {
-			title: 'Апстримы',
-			description:
-				'Апстримы — это выходы наружу. Granger отправляет выбранный трафик через direct uplink, VPN-туннели, Xray или sing-box по правилам байпасов.',
-			add: 'Добавить апстрим',
-			name: 'Имя',
-			type: 'Тип',
-			iface: 'Интерфейс',
-			config: 'Конфиг',
-			status: 'Статус',
-			enabled: 'включен',
-			disabled: 'выключен',
-			pending: 'ожидает',
-			hint: 'Нажмите на апстрим, чтобы посмотреть маршруты, DNS, состояние сервиса и управление доступом.',
-			packages: 'Пакеты протоколов',
-			packagesHint:
-				'Здесь ставятся только runtime-пакеты. Конфиги туннелей, интерфейсы, маршруты и доступы настраиваются отдельно.',
-			installed: 'Установлено',
-			install: 'Установить',
-			manual: 'Нужен источник',
-			unavailable: 'Инсталлер недоступен в dev-режиме',
-			refresh: 'Обновить'
-		}
+		title: 'Upstreams',
+		description:
+			'Upstreams are exits. Granger sends selected traffic through direct uplink, VPN tunnels, Xray, or sing-box according to bypass rules.',
+		add: 'Add upstream',
+		name: 'Name',
+		type: 'Type',
+		iface: 'Interface',
+		config: 'Config',
+		status: 'Status',
+		enabled: 'enabled',
+		disabled: 'disabled',
+		pending: 'pending',
+		hint: 'Click an upstream to inspect routes, DNS, service state, and access controls.',
+		packages: 'Protocol packages',
+		packagesHint:
+			'Install only runtime packages here. Tunnel configs, interfaces, routes, and access rules are configured separately.',
+		installed: 'Installed',
+		install: 'Install',
+		manual: 'Manual source required',
+		unavailable: 'Installer unavailable in dev mode',
+		refresh: 'Refresh'
 	} as const;
 
 	let protocols = $state<ProtocolStatus[]>([
@@ -136,7 +110,7 @@
 			if (body.data) protocols = body.data;
 			protocolMessage = '';
 		} catch {
-			protocolMessage = copy[$locale].unavailable;
+			protocolMessage = copy.unavailable;
 		}
 	}
 
@@ -176,7 +150,7 @@
 			}
 			protocolMessage = body.error ?? body.data?.summary ?? '';
 		} catch {
-			protocolMessage = copy[$locale].unavailable;
+			protocolMessage = copy.unavailable;
 		} finally {
 			installing = '';
 		}
@@ -208,25 +182,25 @@
 </script>
 
 <svelte:head>
-	<title>{copy[$locale].title} · Granger</title>
+	<title>{copy.title} · Granger</title>
 </svelte:head>
 
 <section class="space-y-5">
 	<div class="flex flex-col justify-between gap-4 md:flex-row md:items-end">
 		<div>
-			<h1 class="font-display text-2xl font-bold text-white">{copy[$locale].title}</h1>
-			<p class="mt-2 max-w-3xl text-sm text-muted-foreground">{copy[$locale].description}</p>
+			<h1 class="font-display text-2xl font-bold text-white">{copy.title}</h1>
+			<p class="mt-2 max-w-3xl text-sm text-muted-foreground">{copy.description}</p>
 		</div>
-		<Button href="/upstreams/new"><PlusIcon />{copy[$locale].add}</Button>
+		<Button href="/upstreams/new"><PlusIcon />{copy.add}</Button>
 	</div>
 
 	<Card.Root class="rounded-lg">
 		<Card.Header class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
 			<div>
-				<Card.Title>{copy[$locale].packages}</Card.Title>
-				<Card.Description>{copy[$locale].packagesHint}</Card.Description>
+				<Card.Title>{copy.packages}</Card.Title>
+				<Card.Description>{copy.packagesHint}</Card.Description>
 			</div>
-			<Button variant="outline" onclick={loadProtocols}><ArrowClockwiseIcon />{copy[$locale].refresh}</Button>
+			<Button variant="outline" onclick={loadProtocols}><ArrowClockwiseIcon />{copy.refresh}</Button>
 		</Card.Header>
 		<Card.Content class="space-y-3">
 			{#if protocolMessage}
@@ -250,11 +224,11 @@
 										: 'text-muted-foreground'}"
 							>
 								{#if protocol.installed}
-									<CheckCircleIcon class="size-3.5" />{copy[$locale].installed}
+									<CheckCircleIcon class="size-3.5" />{copy.installed}
 								{:else}
 									<WarningCircleIcon class="size-3.5" />{protocol.installable
 										? protocol.state
-										: copy[$locale].manual}
+										: copy.manual}
 								{/if}
 							</span>
 						</div>
@@ -265,7 +239,7 @@
 								disabled={!protocol.installable || protocol.installed || installing === protocol.name}
 								onclick={() => installProtocol(protocol.name)}
 							>
-								{installing === protocol.name ? copy[$locale].pending : copy[$locale].install}
+								{installing === protocol.name ? copy.pending : copy.install}
 							</Button>
 						</div>
 					</div>
@@ -276,17 +250,17 @@
 
 	<Card.Root class="rounded-lg">
 		<Card.Header>
-			<Card.Title>{copy[$locale].title}</Card.Title>
-			<Card.Description>{copy[$locale].hint}</Card.Description>
+			<Card.Title>{copy.title}</Card.Title>
+			<Card.Description>{copy.hint}</Card.Description>
 		</Card.Header>
 		<Card.Content>
 			<div class="overflow-x-auto rounded-lg border border-border">
 				<div class="grid min-w-[760px] grid-cols-[1.1fr_.9fr_.9fr_1.8fr_.8fr] bg-white/[0.035] px-4 py-2 text-xs font-medium text-muted-foreground">
-					<div>{copy[$locale].name}</div>
-					<div>{copy[$locale].type}</div>
-					<div>{copy[$locale].iface}</div>
-					<div>{copy[$locale].config}</div>
-					<div>{copy[$locale].status}</div>
+					<div>{copy.name}</div>
+					<div>{copy.type}</div>
+					<div>{copy.iface}</div>
+					<div>{copy.config}</div>
+					<div>{copy.status}</div>
 				</div>
 				{#each upstreams as item}
 					<a
@@ -307,10 +281,10 @@
 										: 'text-amber-300'}"
 							>
 								{item.status === 'enabled'
-									? copy[$locale].enabled
+									? copy.enabled
 									: item.status === 'disabled'
-										? copy[$locale].disabled
-										: copy[$locale].pending}
+										? copy.disabled
+										: copy.pending}
 							</span>
 						</div>
 					</a>

@@ -122,6 +122,40 @@ rules:
 	}
 }
 
+func TestParseRejectsUnknownYAMLField(t *testing.T) {
+	_, err := Parse([]byte(`
+server:
+  uplnik_if: eth0
+outputs: {}
+upstreams: {}
+rules: []
+`))
+	if err == nil {
+		t.Fatal("Parse accepted unknown YAML field")
+	}
+	if !strings.Contains(err.Error(), "uplnik_if") {
+		t.Fatalf("unknown field error = %q", err)
+	}
+}
+
+func TestParseRejectsMultipleYAMLDocuments(t *testing.T) {
+	_, err := Parse([]byte(`
+outputs: {}
+upstreams: {}
+rules: []
+---
+outputs: {}
+upstreams: {}
+rules: []
+`))
+	if err == nil {
+		t.Fatal("Parse accepted multiple YAML documents")
+	}
+	if !strings.Contains(err.Error(), "exactly one YAML document") {
+		t.Fatalf("multiple document error = %q", err)
+	}
+}
+
 func TestValidateRejectsClientWithMissingUser(t *testing.T) {
 	cfg := Config{
 		Outputs: map[string]Output{

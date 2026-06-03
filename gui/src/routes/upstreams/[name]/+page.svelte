@@ -4,7 +4,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
-	import { locale } from '$lib/i18n';
 	import { ArrowLeftIcon, PaperPlaneTiltIcon, PowerIcon, TrashIcon, XIcon } from 'phosphor-svelte';
 
 	type Upstream = {
@@ -25,44 +24,23 @@
 	};
 
 	const copy = {
-		en: {
-			description: 'Inspect runtime state, control availability, and complete interactive authentication when a tunnel requires it.',
-			back: 'Back',
-			enable: 'Enable upstream',
-			disable: 'Disable upstream',
-			remove: 'Delete upstream',
-			config: 'Configuration',
-			state: 'State',
-			dns: 'DNS resolvers',
-			snx: 'SNX-RS authentication',
-			username: 'Username',
-			password: 'Password',
-			start: 'Start authentication',
-			submit: 'Submit step',
-			cancel: 'Cancel',
-			disconnect: 'Disconnect',
-			value: 'Code or value',
-			output: 'Command output'
-		},
-		ru: {
-			description: 'Здесь видно состояние туннеля, можно управлять доступностью и пройти интерактивную авторизацию, если она нужна протоколу.',
-			back: 'Назад',
-			enable: 'Включить апстрим',
-			disable: 'Выключить апстрим',
-			remove: 'Удалить апстрим',
-			config: 'Конфигурация',
-			state: 'Состояние',
-			dns: 'DNS-резолверы',
-			snx: 'Авторизация SNX-RS',
-			username: 'Имя пользователя',
-			password: 'Пароль',
-			start: 'Начать авторизацию',
-			submit: 'Отправить значение',
-			cancel: 'Отменить',
-			disconnect: 'Отключить',
-			value: 'Код или значение',
-			output: 'Вывод команды'
-		}
+		description: 'Inspect runtime state, control availability, and complete interactive authentication when a tunnel requires it.',
+		back: 'Back',
+		enable: 'Enable upstream',
+		disable: 'Disable upstream',
+		remove: 'Delete upstream',
+		config: 'Configuration',
+		state: 'State',
+		dns: 'DNS resolvers',
+		snx: 'SNX-RS authentication',
+		username: 'Username',
+		password: 'Password',
+		start: 'Start authentication',
+		submit: 'Submit step',
+		cancel: 'Cancel',
+		disconnect: 'Disconnect',
+		value: 'Code or value',
+		output: 'Command output'
 	} as const;
 
 	const name = page.params.name ?? '';
@@ -107,7 +85,7 @@
 	}
 
 	async function remove() {
-		if (!confirm(copy[$locale].remove + '?')) return;
+		if (!confirm(copy.remove + '?')) return;
 		await api(`/api/upstreams/${encodeURIComponent(name)}?uninstall_protocol=true`, 'DELETE');
 		window.location.href = '/upstreams';
 	}
@@ -130,16 +108,16 @@
 </svelte:head>
 
 <section class="max-w-5xl space-y-5">
-	<Button href="/upstreams" variant="ghost"><ArrowLeftIcon />{copy[$locale].back}</Button>
+	<Button href="/upstreams" variant="ghost"><ArrowLeftIcon />{copy.back}</Button>
 
 	<div class="flex flex-col justify-between gap-4 md:flex-row md:items-end">
 		<div>
 			<h1 class="font-display text-2xl font-bold text-white">{name}</h1>
-			<p class="mt-2 max-w-3xl text-sm text-muted-foreground">{copy[$locale].description}</p>
+			<p class="mt-2 max-w-3xl text-sm text-muted-foreground">{copy.description}</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
-			<Button variant="outline" onclick={toggle}><PowerIcon />{upstream?.enabled === false ? copy[$locale].enable : copy[$locale].disable}</Button>
-			<Button variant="destructive" onclick={remove}><TrashIcon />{copy[$locale].remove}</Button>
+			<Button variant="outline" onclick={toggle}><PowerIcon />{upstream?.enabled === false ? copy.enable : copy.disable}</Button>
+			<Button variant="destructive" onclick={remove}><TrashIcon />{copy.remove}</Button>
 		</div>
 	</div>
 
@@ -147,7 +125,7 @@
 
 	<div class="grid gap-4 md:grid-cols-2">
 		<Card.Root class="rounded-lg">
-			<Card.Header><Card.Title>{copy[$locale].config}</Card.Title></Card.Header>
+			<Card.Header><Card.Title>{copy.config}</Card.Title></Card.Header>
 			<Card.Content class="space-y-2 text-sm text-muted-foreground">
 				<div>type: <span class="font-mono text-white">{upstream?.type ?? '—'}</span></div>
 				<div>interface: <span class="font-mono text-white">{upstream?.interface ?? '—'}</span></div>
@@ -155,10 +133,10 @@
 			</Card.Content>
 		</Card.Root>
 		<Card.Root class="rounded-lg">
-			<Card.Header><Card.Title>{copy[$locale].state}</Card.Title></Card.Header>
+			<Card.Header><Card.Title>{copy.state}</Card.Title></Card.Header>
 			<Card.Content class="space-y-2 text-sm text-muted-foreground">
 				<div>enabled: <span class={upstream?.enabled === false ? 'text-red-300' : 'text-emerald-300'}>{upstream?.enabled === false ? 'false' : 'true'}</span></div>
-				<div>{copy[$locale].dns}: <span class="font-mono text-white">{upstream?.dns?.join(', ') || 'default'}</span></div>
+				<div>{copy.dns}: <span class="font-mono text-white">{upstream?.dns?.join(', ') || 'default'}</span></div>
 				<div>service: <span class="font-mono text-white">{upstream?.service || 'auto'}</span></div>
 			</Card.Content>
 		</Card.Root>
@@ -166,25 +144,25 @@
 
 	{#if upstream?.type === 'snx-rs'}
 		<Card.Root class="rounded-lg">
-			<Card.Header><Card.Title>{copy[$locale].snx}</Card.Title></Card.Header>
+			<Card.Header><Card.Title>{copy.snx}</Card.Title></Card.Header>
 			<Card.Content class="space-y-4">
 				{#if pending.pending}
-					<label class="grid gap-1.5 text-xs text-muted-foreground">{pending.label || pending.step_type || copy[$locale].value}<Input bind:value={value} type="password" /></label>
+					<label class="grid gap-1.5 text-xs text-muted-foreground">{pending.label || pending.step_type || copy.value}<Input bind:value={value} type="password" /></label>
 					<div class="flex flex-wrap gap-2">
-						<Button onclick={() => snx('submit', { [pending.step ?? pending.step_type ?? 'value']: value })}><PaperPlaneTiltIcon />{copy[$locale].submit}</Button>
-						<Button variant="outline" onclick={() => snx('cancel')}><XIcon />{copy[$locale].cancel}</Button>
+						<Button onclick={() => snx('submit', { [pending.step ?? pending.step_type ?? 'value']: value })}><PaperPlaneTiltIcon />{copy.submit}</Button>
+						<Button variant="outline" onclick={() => snx('cancel')}><XIcon />{copy.cancel}</Button>
 					</div>
 				{:else}
 					<div class="grid gap-3 md:grid-cols-2">
-						<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].username}<Input bind:value={username} /></label>
-						<label class="grid gap-1.5 text-xs text-muted-foreground">{copy[$locale].password}<Input bind:value={password} type="password" /></label>
+						<label class="grid gap-1.5 text-xs text-muted-foreground">{copy.username}<Input bind:value={username} /></label>
+						<label class="grid gap-1.5 text-xs text-muted-foreground">{copy.password}<Input bind:value={password} type="password" /></label>
 					</div>
 					<div class="flex flex-wrap gap-2">
-						<Button onclick={() => snx('start', { username, password })}><PowerIcon />{copy[$locale].start}</Button>
-						<Button variant="outline" onclick={() => snx('disconnect')}><XIcon />{copy[$locale].disconnect}</Button>
+						<Button onclick={() => snx('start', { username, password })}><PowerIcon />{copy.start}</Button>
+						<Button variant="outline" onclick={() => snx('disconnect')}><XIcon />{copy.disconnect}</Button>
 					</div>
 				{/if}
-				{#if output}<div><div class="mb-2 text-xs text-muted-foreground">{copy[$locale].output}</div><pre class="max-h-72 overflow-auto rounded-md border border-border bg-black/35 p-4 text-xs text-white/80">{output}</pre></div>{/if}
+				{#if output}<div><div class="mb-2 text-xs text-muted-foreground">{copy.output}</div><pre class="max-h-72 overflow-auto rounded-md border border-border bg-black/35 p-4 text-xs text-white/80">{output}</pre></div>{/if}
 			</Card.Content>
 		</Card.Root>
 	{/if}

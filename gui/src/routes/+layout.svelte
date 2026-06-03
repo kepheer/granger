@@ -1,20 +1,13 @@
 <script lang="ts">
-	import { Button } from '$lib/components/ui/button';
 	import * as Sidebar from '$lib/components/ui/sidebar';
-	import {
-		locale,
-		locales,
-		setLocale,
-		t,
-		type Locale,
-		type MessageKey
-	} from '$lib/i18n';
+	import { t, type MessageKey } from '$lib/i18n';
 	import { page } from '$app/state';
 	import {
 		CompassIcon,
 		PlugsIcon,
 		SignpostIcon,
-		GitBranchIcon
+		GitBranchIcon,
+		GearSixIcon
 	} from 'phosphor-svelte';
 	import '../app.css';
 	import favicon from '$lib/assets/favicon.svg';
@@ -41,10 +34,16 @@
 			icon: SignpostIcon
 		},
 		{
-			labelKey: 'nav.rules',
-			titleKey: 'rules.title',
-			href: '/rules',
+			labelKey: 'nav.routing',
+			titleKey: 'routing.title',
+			href: '/routing',
 			icon: GitBranchIcon
+		},
+		{
+			labelKey: 'nav.settings',
+			titleKey: 'settings.title',
+			href: '/settings',
+			icon: GearSixIcon
 		}
 	] as const;
 
@@ -92,7 +91,7 @@
 								<Sidebar.MenuItem>
 									<Sidebar.MenuButton
 										isActive={isActive(item.href, page.url.pathname)}
-										tooltipContent={t($locale, item.labelKey)}
+										tooltipContent={t(item.labelKey)}
 										class="h-9 rounded-md text-[13px] text-sidebar-foreground/72 hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground data-active:shadow-[inset_0_0_0_1px_var(--sidebar-border)]"
 									>
 										{#snippet child({ props })}
@@ -108,7 +107,7 @@
 													weight="bold"
 													class="text-current/70"
 												/>
-												<span>{t($locale, item.labelKey)}</span>
+												<span>{t(item.labelKey)}</span>
 											</a>
 										{/snippet}
 									</Sidebar.MenuButton>
@@ -135,33 +134,17 @@
 					</div>
 					<div class="hidden h-4 w-px bg-border md:block"></div>
 					<div class="text-[13px] font-bold text-white">
-						{t($locale, titleKey(page.url.pathname))}
+						{t(titleKey(page.url.pathname))}
 					</div>
 				</div>
 
 				<div class="flex shrink-0 items-center gap-3 md:gap-4">
-					<div
-						class="flex rounded-md border border-border bg-white/[0.04] p-0.5"
-						aria-label={t($locale, 'language.select')}
-					>
-						{#each locales as code}
-							<Button
-								variant={$locale === code ? 'default' : 'ghost'}
-								size="xs"
-								class="h-6 rounded-[5px] px-2 text-[11px]"
-								onclick={() => setLocale(code as Locale)}
-							>
-								{t($locale, `language.${code}`)}
-							</Button>
-						{/each}
-					</div>
-
 					<div class="hidden items-center gap-2 sm:flex">
 						<div
 							class="h-2 w-2 rounded-full bg-[#74f2a1] shadow-[0_0_12px_rgba(116,242,161,.58)]"
 						></div>
 						<span class="text-[12px] text-white/58"
-							>{t($locale, 'app.status.ready')}</span
+							>{t('app.status.ready')}</span
 						>
 					</div>
 				</div>

@@ -3,40 +3,22 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { locale } from '$lib/i18n';
 	import { ArrowLeftIcon, UploadSimpleIcon } from 'phosphor-svelte';
 
 	const copy = {
-		en: {
-			title: 'Add upstream',
-			description:
-				'Choose a protocol, keep the suggested interface unless you need a specific name, then paste or upload the provider config. Granger will place it under the upstream config directory.',
-			back: 'Back',
-			type: 'Protocol',
-			name: 'Name',
-			iface: 'Interface',
-			config: 'Inline config',
-			upload: 'Upload config',
-			create: 'Create upstream',
-			suggested: 'Suggested defaults',
-			saving: 'Installing protocol and creating upstream…',
-			error: 'Could not create upstream'
-		},
-		ru: {
-			title: 'Добавить апстрим',
-			description:
-				'Выберите протокол, оставьте предложенный интерфейс, если не нужен особый нейминг, затем вставьте или загрузите конфиг провайдера. Granger сам положит его в каталог конфигов апстримов.',
-			back: 'Назад',
-			type: 'Протокол',
-			name: 'Имя',
-			iface: 'Интерфейс',
-			config: 'Конфиг инлайном',
-			upload: 'Загрузить конфиг',
-			create: 'Создать апстрим',
-			suggested: 'Предложенные дефолты',
-			saving: 'Устанавливаем протокол и создаем апстрим…',
-			error: 'Не удалось создать апстрим'
-		}
+		title: 'Add upstream',
+		description:
+			'Choose a protocol, keep the suggested interface unless you need a specific name, then paste or upload the provider config. Granger will place it under the upstream config directory.',
+		back: 'Back',
+		type: 'Protocol',
+		name: 'Name',
+		iface: 'Interface',
+		config: 'Inline config',
+		upload: 'Upload config',
+		create: 'Create upstream',
+		suggested: 'Suggested defaults',
+		saving: 'Installing protocol and creating upstream…',
+		error: 'Could not create upstream'
 	} as const;
 
 	const protocols = [
@@ -66,7 +48,7 @@
 
 	async function create() {
 		saving = true;
-		message = copy[$locale].saving;
+		message = copy.saving;
 		try {
 			const response = await fetch('/api/upstreams', {
 				method: 'POST',
@@ -81,7 +63,7 @@
 			if (!response.ok) throw new Error(await response.text());
 			window.location.href = '/upstreams';
 		} catch (error) {
-			message = `${copy[$locale].error}: ${error instanceof Error ? error.message : String(error)}`;
+			message = `${copy.error}: ${error instanceof Error ? error.message : String(error)}`;
 		} finally {
 			saving = false;
 		}
@@ -96,20 +78,20 @@
 </script>
 
 <svelte:head>
-	<title>{copy[$locale].title} · Granger</title>
+	<title>{copy.title} · Granger</title>
 </svelte:head>
 
 <section class="max-w-4xl space-y-5">
-	<Button href="/upstreams" variant="ghost"><ArrowLeftIcon />{copy[$locale].back}</Button>
+	<Button href="/upstreams" variant="ghost"><ArrowLeftIcon />{copy.back}</Button>
 
 	<div>
-		<h1 class="font-display text-2xl font-bold text-white">{copy[$locale].title}</h1>
-		<p class="mt-2 max-w-3xl text-sm text-muted-foreground">{copy[$locale].description}</p>
+		<h1 class="font-display text-2xl font-bold text-white">{copy.title}</h1>
+		<p class="mt-2 max-w-3xl text-sm text-muted-foreground">{copy.description}</p>
 	</div>
 
 	<Card.Root class="rounded-lg">
 		<Card.Header>
-			<Card.Title>{copy[$locale].suggested}</Card.Title>
+			<Card.Title>{copy.suggested}</Card.Title>
 		</Card.Header>
 		<Card.Content class="space-y-5">
 			<div class="flex flex-wrap gap-2">
@@ -120,27 +102,27 @@
 
 			<div class="grid gap-3 md:grid-cols-2">
 				<label class="grid gap-1.5 text-xs text-muted-foreground">
-					{copy[$locale].name}
+					{copy.name}
 					<Input bind:value={name} placeholder="awg_default" />
 				</label>
 				<label class="grid gap-1.5 text-xs text-muted-foreground">
-					{copy[$locale].iface}
+					{copy.iface}
 					<Input bind:value={iface} placeholder="awg0" />
 				</label>
 			</div>
 
 			<label class="grid gap-1.5 text-xs text-muted-foreground">
-				{copy[$locale].config}
+				{copy.config}
 				<Textarea bind:value={inlineConfig} class="min-h-48 font-mono text-xs" placeholder="[Interface]&#10;PrivateKey = ..." />
 			</label>
 
 			<label class="grid gap-1.5 text-xs text-muted-foreground">
-				{copy[$locale].upload}
+				{copy.upload}
 				<Input type="file" onchange={upload} />
 			</label>
 
 			{#if message}<p class="text-sm text-muted-foreground">{message}</p>{/if}
-			<Button disabled={saving} onclick={create}><UploadSimpleIcon />{copy[$locale].create}</Button>
+			<Button disabled={saving} onclick={create}><UploadSimpleIcon />{copy.create}</Button>
 		</Card.Content>
 	</Card.Root>
 </section>

@@ -1,7 +1,9 @@
 package config
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -126,8 +128,21 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	return Parse(b)
+}
+
+func Parse(b []byte) (Config, error) {
 	var cfg Config
-	if err := yaml.Unmarshal(b, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(b))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
+		return Config{}, err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return Config{}, errors.New("config must contain exactly one YAML document")
+		}
 		return Config{}, err
 	}
 	return cfg, cfg.Validate()

@@ -184,6 +184,8 @@ type routingGraph struct {
 func (a apiServer) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/config", a.handleConfig)
+	mux.HandleFunc("/config/export", a.handleConfigExport)
+	mux.HandleFunc("/config/import", a.handleConfigImport)
 	mux.HandleFunc("/dashboard", a.handleDashboard)
 	mux.HandleFunc("/runtime", a.handleRuntime)
 	mux.HandleFunc("/upstreams", a.handleUpstreams)
@@ -282,6 +284,44 @@ func (a apiServer) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg})
+}
+
+func (a apiServer) handleConfigExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	body, err := os.ReadFile(config.Path)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-yaml; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="granger.yaml"`)
+	_, _ = w.Write(body)
+}
+
+func (a apiServer) handleConfigImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	body, err := readImportedConfig(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	cfg, err := config.Parse(body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := config.SaveAtomic(config.Path, cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	plan := a.engine.ApplyConfig(cfg)
+	writeJSON(w, http.StatusOK, apiResponse{OK: allResultsOK(plan.Results), Config: &cfg, Results: plan.Results, Data: map[string]string{"firewall": plan.Firewall}})
 }
 
 func (a apiServer) handleRuntime(w http.ResponseWriter, r *http.Request) {
@@ -1164,6 +1204,30 @@ func readJSON(r *http.Request, dst any) error {
 	dec := json.NewDecoder(io.LimitReader(r.Body, 4<<20))
 	dec.DisallowUnknownFields()
 	return dec.Decode(dst)
+}
+
+func readImportedConfig(r *http.Request) ([]byte, error) {
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		if err := r.ParseMultipartForm(8 << 20); err != nil {
+			return nil, err
+		}
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		return ioReadAllLimit(file, 4<<20)
+	}
+	var body struct {
+		Config string `json:"config"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(body.Config) == "" {
+		return nil, errors.New("config is empty")
+	}
+	return []byte(body.Config), nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, body apiResponse) {

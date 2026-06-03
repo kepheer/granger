@@ -14,8 +14,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { locale } from '$lib/i18n';
-	import { FloppyDiskIcon, GitBranchIcon, PlusIcon, WarningCircleIcon } from 'phosphor-svelte';
+	import { FloppyDiskIcon, PlusIcon, WarningCircleIcon } from 'phosphor-svelte';
 
 	type GraphConfig = {
 		server?: Record<string, unknown>;
@@ -32,52 +31,27 @@
 	};
 
 	const copy = {
-		en: {
-			title: 'Routing',
-			description:
-				'Build routing as a graph: entrypoints feed rules, rules choose upstreams, and fallback/DNS nodes explain what happens when a tunnel is down.',
-			addNode: 'Add node',
-			save: 'Save graph',
-			dryRun: 'Dry run',
-			selected: 'Selected node',
-			noSelection: 'Select a node in the graph or from the list.',
-			label: 'Label',
-			type: 'Type',
-			domains: 'Domains',
-			cidrs: 'CIDRs',
-			dns: 'DNS resolvers',
-			via: 'Via / target',
-			fallback: 'Fallback upstream',
-			defaultUpstream: 'Default upstream',
-			blockFallback: 'Block traffic when fallback is unavailable',
-			statusReady: 'Graph ready',
-			statusSaved: 'Graph saved',
-			statusDryRun: 'Dry-run finished',
-			statusError: 'Graph action failed'
-		},
-		ru: {
-			title: 'Маршрутизация',
-			description:
-				'Собирайте маршрутизацию как граф: подключения входят в правила, правила выбирают апстримы, а fallback/DNS-узлы показывают, что произойдет при недоступном туннеле.',
-			addNode: 'Добавить узел',
-			save: 'Сохранить граф',
-			dryRun: 'Проверить план',
-			selected: 'Выбранный узел',
-			noSelection: 'Выберите узел на графе или в списке.',
-			label: 'Название',
-			type: 'Тип',
-			domains: 'Домены',
-			cidrs: 'CIDR',
-			dns: 'DNS-резолверы',
-			via: 'Через / цель',
-			fallback: 'Фоллбэк-апстрим',
-			defaultUpstream: 'Апстрим по умолчанию',
-			blockFallback: 'Не пропускать трафик через фоллбэк',
-			statusReady: 'Граф готов',
-			statusSaved: 'Граф сохранен',
-			statusDryRun: 'План проверен',
-			statusError: 'Действие с графом не удалось'
-		}
+		title: 'Routing',
+		description:
+			'Build routing as a graph: entrypoints feed rules, rules choose upstreams, and fallback/DNS nodes explain what happens when a tunnel is down.',
+		addNode: 'Add node',
+		save: 'Save graph',
+		dryRun: 'Dry run',
+		selected: 'Selected node',
+		noSelection: 'Select a node in the graph or from the list.',
+		label: 'Label',
+		type: 'Type',
+		domains: 'Domains',
+		cidrs: 'CIDRs',
+		dns: 'DNS resolvers',
+		via: 'Via / target',
+		fallback: 'Fallback upstream',
+		defaultUpstream: 'Default upstream',
+		blockFallback: 'Block traffic when fallback is unavailable',
+		statusReady: 'Graph ready',
+		statusSaved: 'Graph saved',
+		statusDryRun: 'Dry-run finished',
+		statusError: 'Graph action failed'
 	} as const;
 
 	let nodes = $state<Node[]>([]);
@@ -133,7 +107,7 @@
 		} catch {
 			loadGraph(fallbackGraph);
 		}
-		status = copy[$locale].statusReady;
+		status = copy.statusReady;
 	});
 
 	function loadGraph(graph: GraphPayload) {
@@ -254,9 +228,9 @@
 				body: JSON.stringify(payload)
 			});
 			if (!response.ok) throw new Error(await response.text());
-			status = copy[$locale].statusSaved;
+			status = copy.statusSaved;
 		} catch (error) {
-			status = `${copy[$locale].statusError}: ${error instanceof Error ? error.message : String(error)}`;
+			status = `${copy.statusError}: ${error instanceof Error ? error.message : String(error)}`;
 		}
 	}
 
@@ -264,9 +238,9 @@
 		try {
 			const response = await fetch('/api/routing/dry-run', { method: 'POST', headers: { 'x-granger-request': '1' } });
 			if (!response.ok) throw new Error(await response.text());
-			status = copy[$locale].statusDryRun;
+			status = copy.statusDryRun;
 		} catch (error) {
-			status = `${copy[$locale].statusError}: ${error instanceof Error ? error.message : String(error)}`;
+			status = `${copy.statusError}: ${error instanceof Error ? error.message : String(error)}`;
 		}
 	}
 
@@ -291,18 +265,18 @@
 </script>
 
 <svelte:head>
-	<title>{copy[$locale].title} · Granger</title>
+	<title>{copy.title} · Granger</title>
 </svelte:head>
 
 <section class="space-y-5">
 	<div class="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
 		<div>
-			<h1 class="font-display text-2xl font-bold text-white">{copy[$locale].title}</h1>
-			<p class="mt-2 max-w-4xl text-sm text-muted-foreground">{copy[$locale].description}</p>
+			<h1 class="font-display text-2xl font-bold text-white">{copy.title}</h1>
+			<p class="mt-2 max-w-4xl text-sm text-muted-foreground">{copy.description}</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
-			<Button variant="outline" onclick={dryRun}><WarningCircleIcon />{copy[$locale].dryRun}</Button>
-			<Button onclick={saveGraph}><FloppyDiskIcon />{copy[$locale].save}</Button>
+			<Button variant="outline" onclick={dryRun}><WarningCircleIcon />{copy.dryRun}</Button>
+			<Button onclick={saveGraph}><FloppyDiskIcon />{copy.save}</Button>
 		</div>
 	</div>
 
@@ -326,7 +300,7 @@
 		<div class="space-y-4">
 			<Card.Root class="rounded-lg">
 				<Card.Header>
-					<Card.Title>{copy[$locale].addNode}</Card.Title>
+					<Card.Title>{copy.addNode}</Card.Title>
 				</Card.Header>
 				<Card.Content class="flex flex-wrap gap-2">
 					{#each nodeTypes as item}
@@ -339,17 +313,17 @@
 
 			<Card.Root class="rounded-lg">
 				<Card.Header>
-					<Card.Title>{copy[$locale].selected}</Card.Title>
+					<Card.Title>{copy.selected}</Card.Title>
 					<Card.Description>{status}</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4">
 					{#if selectedNode}
 						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							{copy[$locale].label}
+							{copy.label}
 							<Input value={String(selectedNode.data?.label ?? '')} oninput={(event) => updateSelectedLabel(event.currentTarget.value)} />
 						</label>
 						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							{copy[$locale].fallback}
+							{copy.fallback}
 							<Input
 								value={selectedRawValue('domain_fallback_via') || selectedRawValue('fallback_when_down')}
 								placeholder="direct"
@@ -364,13 +338,13 @@
 						</label>
 						{#if String(selectedNode.data?.kind) === 'upstream'}
 							<Button variant={selectedBool('default') ? 'default' : 'outline'} size="sm" onclick={() => updateSelectedBool('default', !selectedBool('default'))}>
-								{copy[$locale].defaultUpstream}
+								{copy.defaultUpstream}
 							</Button>
 							<Button variant={selectedBool('block_fallback') ? 'destructive' : 'outline'} size="sm" onclick={() => updateSelectedBool('block_fallback', !selectedBool('block_fallback'))}>
-								{copy[$locale].blockFallback}
+								{copy.blockFallback}
 							</Button>
 							<label class="grid gap-1.5 text-xs text-muted-foreground">
-								{copy[$locale].dns}
+								{copy.dns}
 								<Textarea
 									value={selectedRawValue('dns')}
 									placeholder="1.1.1.1&#10;9.9.9.9"
@@ -379,32 +353,32 @@
 							</label>
 						{/if}
 						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							{copy[$locale].type}
+							{copy.type}
 							<Input value={String(selectedNode.data?.kind ?? '')} readonly />
 						</label>
 						{#if String(selectedNode.data?.kind) === 'rule'}
 							<label class="grid gap-1.5 text-xs text-muted-foreground">
-								{copy[$locale].domains}
+								{copy.domains}
 								<Textarea value={selectedRawValue('domains')} placeholder="example.org&#10;*.media.example" oninput={(event) => updateSelectedRaw('domains', event.currentTarget.value, true)} />
 							</label>
 							<label class="grid gap-1.5 text-xs text-muted-foreground">
-								{copy[$locale].cidrs}
+								{copy.cidrs}
 								<Textarea value={selectedRawValue('cidrs')} placeholder="10.44.0.0/16" oninput={(event) => updateSelectedRaw('cidrs', event.currentTarget.value, true)} />
 							</label>
 							<label class="grid gap-1.5 text-xs text-muted-foreground">
-								{copy[$locale].via}
+								{copy.via}
 								<Input value={selectedRawValue('via')} placeholder="default_awg" oninput={(event) => updateSelectedRaw('via', event.currentTarget.value)} />
 							</label>
 						{/if}
 					{:else}
-						<p class="text-sm text-muted-foreground">{copy[$locale].noSelection}</p>
+						<p class="text-sm text-muted-foreground">{copy.noSelection}</p>
 					{/if}
 				</Card.Content>
 			</Card.Root>
 
 			<Card.Root class="rounded-lg">
 				<Card.Header>
-					<Card.Title><GitBranchIcon /> Nodes</Card.Title>
+					<Card.Title>Nodes</Card.Title>
 				</Card.Header>
 				<Card.Content class="space-y-2">
 					{#each nodes as node}
