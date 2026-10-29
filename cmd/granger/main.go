@@ -19,7 +19,7 @@ func main() {
 		cmd = os.Args[1]
 	}
 	dryRun := false
-	if cmd == "apply" && len(os.Args) > 2 && os.Args[2] == "--dry-run" {
+	if (cmd == "apply" || cmd == "restore") && len(os.Args) > 2 && os.Args[2] == "--dry-run" {
 		dryRun = true
 	}
 	r := runner.New()
@@ -30,20 +30,27 @@ func main() {
 	h := health.New(r)
 	switch cmd {
 	case "help", "-h", "--help":
-		fmt.Println("usage: granger [apply|health|runtime|drivers|serve-gui [ADDR] [DIR]|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
+		fmt.Println("usage: granger [apply|restore|health|runtime|drivers|serve-gui [ADDR] [DIR]|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
 		fmt.Println()
 		fmt.Println("commands:")
 		fmt.Println("  apply [--dry-run]     apply declarative routing config")
+		fmt.Println("  restore [--dry-run]   start configured tunnels and restore routing after boot")
 		fmt.Println("  health                run health checks")
 		fmt.Println("  runtime               show output/upstream driver runtime states")
 		fmt.Println("  drivers               list registered upstream/output drivers")
-		fmt.Println("  serve-gui [ADDR] [DIR] serve static GUI, default 10.19.84.51:1984 dist/gui")
+		fmt.Println("  serve-gui [ADDR] [DIR] serve static GUI, default 127.0.0.1:1984 dist/gui")
 		fmt.Println("  restart-output NAME   restart output by config name")
 		fmt.Println("  restart-upstream NAME restart upstream by config name")
 		fmt.Println("  test-domain DOMAIN    resolve/test domain against Granger DNS")
-	case "apply":
+	case "apply", "restore":
 		cfg := mustConfig()
-		plan := e.ApplyConfig(cfg)
+		var plan engine.ApplyPlan
+		if cmd == "restore" {
+			plan = e.RestoreConfig(cfg)
+		}
+		if cmd == "apply" {
+			plan = e.ApplyConfig(cfg)
+		}
 		fmt.Printf("firewall backend: %s\n", plan.Firewall)
 		if plan.DryRun {
 			fmt.Println("mode: dry-run")
@@ -52,12 +59,20 @@ func main() {
 		for _, res := range plan.Results {
 			fmt.Printf("[%v] %s\n$ %s\n%s\n\n", res.OK, res.Title, res.Command, res.Output)
 		}
+		for _, res := range plan.Results {
+			if res.OK == false {
+				os.Exit(1)
+			}
+		}
 	case "health":
 		cfg := mustConfig()
 		st := h.Check(cfg)
 		fmt.Println("overall:", st.Overall)
 		for _, ch := range st.Checks {
 			fmt.Printf("%s: %s - %s\n", ch.Name, ch.State, ch.Summary)
+		}
+		if st.Overall != health.Healthy {
+			os.Exit(1)
 		}
 	case "drivers":
 		up, out := e.SupportedDrivers()
@@ -104,7 +119,7 @@ func main() {
 			fmt.Printf("[%v] %s\n$ %s\n%s\n\n", res.OK, res.Title, res.Command, res.Output)
 		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: granger [apply|health|runtime|drivers|serve-gui [ADDR] [DIR]|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
+		fmt.Fprintln(os.Stderr, "usage: granger [apply|restore|health|runtime|drivers|serve-gui [ADDR] [DIR]|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
 		os.Exit(2)
 	}
 }
