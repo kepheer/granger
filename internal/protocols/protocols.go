@@ -19,8 +19,8 @@ Enabled: yes
 Signed-By: /etc/apt/keyrings/sagernet.asc
 `
 
-const amneziaDebianAPTSource = `deb https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main
-deb-src https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main
+const amneziaDebianAPTSource = `deb [signed-by=/etc/apt/keyrings/amnezia.asc] https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main
+deb-src [signed-by=/etc/apt/keyrings/amnezia.asc] https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main
 `
 
 type Status struct {
@@ -183,12 +183,12 @@ func (i amneziaWGInstaller) Install(r runner.Runner) []runner.Result {
 		return results
 	}
 	results = append(results,
-		r.Run("Install AmneziaWG prerequisites", installTimeout, nil, "sh", "-c", `. /etc/os-release; headers=linux-headers-amd64; [ "$ID" = ubuntu ] && headers=linux-headers-generic; DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y --no-install-recommends software-properties-common python3-launchpadlib gnupg2 dkms build-essential "$headers"`),
+		r.Run("Install AmneziaWG prerequisites", installTimeout, nil, "sh", "-c", `. /etc/os-release; headers=linux-headers-amd64; extras=; if [ "$ID" = ubuntu ]; then headers=linux-headers-generic; extras=software-properties-common; fi; DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y --no-install-recommends gnupg2 curl dkms build-essential "$headers" "linux-headers-$(uname -r)" $extras`),
 	)
 	if failed(results) {
 		return results
 	}
-	results = append(results, r.Run("Configure AmneziaWG package source", installTimeout, strings.NewReader(amneziaDebianAPTSource), "sh", "-c", `. /etc/os-release; if [ "$ID" = ubuntu ]; then add-apt-repository -y ppa:amnezia/ppa; else apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 57290828 && mkdir -p /etc/apt/sources.list.d && tee /etc/apt/sources.list.d/amneziawg.list >/dev/null; fi`))
+	results = append(results, r.Run("Configure AmneziaWG package source", installTimeout, strings.NewReader(amneziaDebianAPTSource), "sh", "-c", `. /etc/os-release; if [ "$ID" = ubuntu ]; then add-apt-repository -y ppa:amnezia/ppa; else mkdir -p /etc/apt/keyrings /etc/apt/sources.list.d && curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x57290828" -o /etc/apt/keyrings/amnezia.asc && chmod 644 /etc/apt/keyrings/amnezia.asc && tee /etc/apt/sources.list.d/amneziawg.list >/dev/null; fi`))
 	if failed(results) {
 		return results
 	}
@@ -306,7 +306,7 @@ func (i xrayInstaller) Install(r runner.Runner) []runner.Result {
 	}
 	results = append(results,
 		r.Run("Download Xray official installer", 30*time.Second, nil, "curl", "-fsSL", "https://github.com/XTLS/Xray-install/raw/main/install-release.sh", "-o", "/var/lib/granger/installers/xray-install-release.sh"),
-		r.Run("Install Xray", installTimeout, nil, "bash", "/var/lib/granger/installers/xray-install-release.sh", "install", "-u", "root"),
+		r.Run("Install Xray", installTimeout, nil, "bash", "/var/lib/granger/installers/xray-install-release.sh", "install", "--without-geodata"),
 	)
 	return results
 }

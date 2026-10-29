@@ -23,6 +23,18 @@ if [ -r /var/lib/granger/route-tables ]; then
   done </var/lib/granger/route-tables
 fi
 
+iptables -D FORWARD -j GRANGER_USER_FORWARD 2>/dev/null || true
+iptables -F GRANGER_USER_FORWARD 2>/dev/null || true
+iptables -X GRANGER_USER_FORWARD 2>/dev/null || true
+while iptables -D INPUT -j GRANGER_USER_INPUT 2>/dev/null; do :; done
+iptables -F GRANGER_USER_INPUT 2>/dev/null || true
+iptables -X GRANGER_USER_INPUT 2>/dev/null || true
+iptables -D OUTPUT -j GRANGER_USER_OUTPUT 2>/dev/null || true
+iptables -F GRANGER_USER_OUTPUT 2>/dev/null || true
+iptables -X GRANGER_USER_OUTPUT 2>/dev/null || true
+iptables -t mangle -D OUTPUT -j GRANGER_OUTPUT 2>/dev/null || true
+iptables -t mangle -F GRANGER_OUTPUT 2>/dev/null || true
+iptables -t mangle -X GRANGER_OUTPUT 2>/dev/null || true
 iptables -t mangle -D PREROUTING -j GRANGER_PREROUTING 2>/dev/null || true
 iptables -D FORWARD -j GRANGER_FORWARD 2>/dev/null || true
 iptables -t nat -D POSTROUTING -j GRANGER_POSTROUTING 2>/dev/null || true

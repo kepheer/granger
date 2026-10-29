@@ -87,7 +87,7 @@ func TestXrayInstallerUsesOfficialScript(t *testing.T) {
 	if !hasCommand(results, "curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh -o /var/lib/granger/installers/xray-install-release.sh") {
 		t.Fatalf("Xray installer did not download official installer: %#v", results)
 	}
-	if !hasCommand(results, "bash /var/lib/granger/installers/xray-install-release.sh install -u root") {
+	if !hasCommand(results, "bash /var/lib/granger/installers/xray-install-release.sh install --without-geodata") {
 		t.Fatalf("Xray installer did not execute cached installer: %#v", results)
 	}
 }

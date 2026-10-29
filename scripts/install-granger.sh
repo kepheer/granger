@@ -4,12 +4,7 @@ set -eu
 APP_NAME="granger"
 REPO="${GRANGER_REPO:-kepheer/granger}"
 VERSION="${GRANGER_VERSION:-latest}"
-LISTEN="${GRANGER_LISTEN:-10.19.84.51:1984}"
-WG_INTERFACE="${GRANGER_ADMIN_WG_INTERFACE:-wg0}"
-WG_SUBNET="${GRANGER_ADMIN_WG_SUBNET:-10.19.84.0/24}"
-WG_SERVER_IP="${GRANGER_ADMIN_WG_SERVER_IP:-10.19.84.51}"
-WG_CLIENT_IP="${GRANGER_ADMIN_WG_CLIENT_IP:-10.19.84.52}"
-WG_PORT="${GRANGER_ADMIN_WG_PORT:-51820}"
+LISTEN="${GRANGER_LISTEN:-127.0.0.1:1984}"
 BIN_DST="/usr/local/sbin/granger"
 GUI_DST="/opt/granger/gui"
 CONFIG_PATH="/etc/granger/granger.yaml"
@@ -76,13 +71,6 @@ install_packages() {
   info "Installing base runtime packages"
   apt-get update
 
-  headers="linux-headers-amd64"
-  kernel="linux-image-amd64"
-  if [ "$OS_ID" = "ubuntu" ]; then
-    headers="linux-headers-generic"
-    kernel="linux-image-generic"
-  fi
-
   apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -96,24 +84,10 @@ install_packages() {
     dnsutils \
     unzip \
     psmisc \
-    software-properties-common \
-    python3-launchpadlib \
-    dkms \
-    build-essential \
     systemd \
-    procps \
-    wireguard-tools \
-    "$kernel" \
-    "$headers"
+    procps
 }
 
-check_running_kernel_headers() {
-  if [ ! -e "/lib/modules/$(uname -r)/build" ]; then
-    printf '\nreboot required: headers for the running kernel %s are unavailable.\n' "$(uname -r)" >&2
-    printf 'Reboot the server and rerun the Granger installer.\n' >&2
-    exit 75
-  fi
-}
 
 script_dir() {
   case "${0:-}" in
@@ -205,51 +179,6 @@ install_files() {
   cp -a "$GUI_SRC/." "$GUI_DST/"
 }
 
-write_admin_wireguard() {
-  info "Writing private admin WireGuard entrypoint"
-  if [ -e "$CONFIG_PATH" ]; then
-    printf 'config exists, leaving admin WireGuard entrypoint untouched: %s\n' "$CONFIG_PATH"
-    return
-  fi
-  install -d -m 0700 /etc/wireguard /etc/granger/outputs /etc/granger/secrets
-
-  server_private="$(wg genkey)"
-  server_public="$(printf '%s\n' "$server_private" | wg pubkey)"
-  client_private="$(wg genkey)"
-  client_public="$(printf '%s\n' "$client_private" | wg pubkey)"
-
-  cat >"/etc/granger/secrets/admin_wg-server.key" <<EOF
-${server_private}
-EOF
-  chmod 0600 "/etc/granger/secrets/admin_wg-server.key"
-
-  cat >"/etc/granger/outputs/${WG_INTERFACE}.conf" <<EOF
-[Interface]
-PrivateKey = ${server_private}
-Address = ${WG_SERVER_IP}/24
-ListenPort = ${WG_PORT}
-
-[Peer]
-PublicKey = ${client_public}
-AllowedIPs = ${WG_CLIENT_IP}/32
-EOF
-  chmod 0600 "/etc/granger/outputs/${WG_INTERFACE}.conf"
-  ln -sfn "/etc/granger/outputs/${WG_INTERFACE}.conf" "/etc/wireguard/${WG_INTERFACE}.conf"
-
-  cat >"/root/granger-admin.conf" <<EOF
-[Interface]
-PrivateKey = ${client_private}
-Address = ${WG_CLIENT_IP}/32
-DNS = ${WG_SERVER_IP}
-
-[Peer]
-PublicKey = ${server_public}
-Endpoint = ${PUBLIC_IP}:${WG_PORT}
-AllowedIPs = 0.0.0.0/0
-PersistentKeepalive = 25
-EOF
-  chmod 0600 /root/granger-admin.conf
-}
 
 write_config() {
   info "Writing minimal config"
@@ -262,30 +191,16 @@ server:
   public_ip: "${PUBLIC_IP}"
   uplink_if: "${UPLINK_IF}"
   uplink_gw: "${UPLINK_GW}"
-  dns_interface: "${WG_INTERFACE}"
-  dns_listen: "${WG_SERVER_IP}"
+  dns_interface: "lo"
+  dns_listen: "127.0.0.1"
   dns_upstreams:
     - "8.8.8.8"
     - "9.9.9.9"
 users:
   admin:
     display_name: "Administrator"
-    output: "admin_wg"
-    client: "admin"
-outputs:
-  admin_wg:
-    type: "wireguard"
-    interface: "${WG_INTERFACE}"
-    config: "/etc/granger/outputs/${WG_INTERFACE}.conf"
-    subnet: "${WG_SUBNET}"
-    server_ip: "${WG_SERVER_IP}"
-    listen_port: ${WG_PORT}
-    clients:
-      - name: "admin"
-        user: "admin"
-        ip: "${WG_CLIENT_IP}/32"
-        config: "/root/granger-admin.conf"
-        public_key: "${client_public}"
+    admin: true
+outputs: {}
 upstreams:
   direct:
     type: "direct"
@@ -305,12 +220,12 @@ write_service() {
   cat >"$SERVICE_PATH" <<EOF
 [Unit]
 Description=Granger private routing control plane
-After=network-online.target wg-quick@${WG_INTERFACE}.service
+After=network-online.target
 Wants=network-online.target
-Requires=wg-quick@${WG_INTERFACE}.service
 
 [Service]
 Type=simple
+ExecStartPre=-${BIN_DST} restore
 ExecStart=${BIN_DST} serve-gui ${LISTEN} ${GUI_DST}
 Restart=on-failure
 RestartSec=2s
@@ -321,7 +236,8 @@ Group=root
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  systemctl enable --now granger.service
+  systemctl enable granger.service
+  systemctl restart granger.service
 }
 
 main() {
@@ -339,26 +255,14 @@ main() {
   printf '  Listen:  http://%s\n' "$LISTEN"
 
   install_packages
-  check_running_kernel_headers
   install_files
-  write_admin_wireguard
   write_config
-  if [ -r "/etc/wireguard/${WG_INTERFACE}.conf" ]; then
-    systemctl enable --now "wg-quick@${WG_INTERFACE}.service"
-  else
-    die "WireGuard entrypoint config is missing: /etc/wireguard/${WG_INTERFACE}.conf"
-  fi
-  "${BIN_DST}" apply
   write_service
 
   printf '\nGranger installed.\n'
   printf 'Open: http://%s\n' "$LISTEN"
-  if [ -r /root/granger-admin.conf ]; then
-    printf 'Admin WireGuard config: /root/granger-admin.conf\n'
-    printf '\n'
-    cat /root/granger-admin.conf
-    printf '\n'
-  fi
+  printf 'Administrative token: /etc/granger/secrets/admin-token\n'
+  printf 'Access the loopback-only GUI through an SSH tunnel.\n'
   printf 'Protocol packages are installed later from the GUI.\n'
 }
 
