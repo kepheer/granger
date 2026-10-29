@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import ConfirmAction from '$lib/components/confirm-action.svelte';
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -49,11 +50,19 @@
 	let username = $state('');
 	let password = $state('');
 	let value = $state('');
+	let stepInput = $state<HTMLInputElement | null>(null);
+	let usernameInput = $state<HTMLInputElement | null>(null);
 	let output = $state('');
 	let message = $state('');
+	let busy = $state(false);
+	let removeOpen = $state(false);
+	let authenticating = $state(false);
+	let runtime = $state<{ State: string; Summary: string; Service?: string } | null>(null);
 
 	onMount(() => {
 		void load();
+		const timer = window.setInterval(refreshStatus, 5000);
+		return () => window.clearInterval(timer);
 	});
 
 	async function api(url: string, method = 'GET', body?: unknown) {
@@ -63,14 +72,17 @@
 			body: body === undefined ? undefined : JSON.stringify(body)
 		});
 		const result = await response.json();
-		if (!response.ok) throw new Error(result.error ?? response.statusText);
+		if (response.ok === false || result.ok !== true) {
+			const failure = result.results?.find((item: { OK: boolean }) => item.OK === false);
+			throw new Error(result.error ?? failure?.Output ?? response.statusText);
+		}
 		return result;
 	}
 
 	async function load() {
 		try {
 			upstream = (await api(`/api/upstreams/${encodeURIComponent(name)}`)).data;
-			if (upstream?.type === 'snx-rs') pending = (await api(`/api/snx/${encodeURIComponent(name)}/status`)).data;
+			await refreshStatus();
 			output = pending.output ?? output;
 			message = '';
 		} catch (error) {
@@ -78,27 +90,76 @@
 		}
 	}
 
+	async function refreshStatus() {
+		try {
+			const result = await api('/api/runtime');
+			runtime = result.data.find((item: { Name: string; Type: string }) => item.Name === name && item.Type === upstream?.type) ?? null;
+			if (upstream?.type === 'snx-rs') {
+				pending = (await api(`/api/snx/${encodeURIComponent(name)}/status`)).data;
+				output = pending.output ?? output;
+			}
+		} catch (error) {
+			message = error instanceof Error ? error.message : String(error);
+		}
+	}
+
 	async function toggle() {
-		if (!upstream) return;
-		await api(`/api/upstreams/${encodeURIComponent(name)}/enable`, 'POST', { enabled: upstream.enabled === false });
-		await load();
+		if (upstream === null || busy) {
+			return;
+		}
+
+		busy = true;
+		try {
+			await api(`/api/upstreams/${encodeURIComponent(name)}/enable`, 'POST', { enabled: upstream.enabled === false });
+			await load();
+		} catch (error) {
+			message = error instanceof Error ? error.message : String(error);
+		} finally {
+			busy = false;
+		}
 	}
 
 	async function remove() {
-		if (!confirm(copy.remove + '?')) return;
-		await api(`/api/upstreams/${encodeURIComponent(name)}?uninstall_protocol=true`, 'DELETE');
-		window.location.href = '/upstreams';
+		if (busy) {
+			return;
+		}
+
+		busy = true;
+		message = '';
+		try {
+			await api(`/api/upstreams/${encodeURIComponent(name)}`, 'DELETE');
+			window.location.href = '/upstreams';
+		} catch (error) {
+			message = error instanceof Error ? error.message : String(error);
+		} finally {
+			busy = false;
+		}
 	}
 
 	async function snx(action: string, inputs: Record<string, string> = {}) {
+		if (authenticating) {
+			return;
+		}
+
+		authenticating = true;
+		message = '';
 		try {
 			const result = await api(`/api/snx/${encodeURIComponent(name)}/${action}`, 'POST', { inputs });
 			pending = result.data ?? { pending: false };
-			output = pending.output ?? result.results?.map((item: { output?: string }) => item.output).filter(Boolean).join('\n\n') ?? '';
+			output = pending.output ?? result.results?.map((item: { Output?: string }) => item.Output).filter(Boolean).join('\n\n') ?? '';
 			password = '';
 			value = '';
+			await tick();
+			if (pending.pending) {
+				stepInput?.focus();
+			}
+			if (pending.pending === false) {
+				usernameInput?.focus();
+			}
 		} catch (error) {
 			message = error instanceof Error ? error.message : String(error);
+		} finally {
+			authenticating = false;
 		}
 	}
 </script>
@@ -116,12 +177,12 @@
 			<p class="mt-2 max-w-3xl text-sm text-muted-foreground">{copy.description}</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
-			<Button variant="outline" onclick={toggle}><PowerIcon />{upstream?.enabled === false ? copy.enable : copy.disable}</Button>
-			<Button variant="destructive" onclick={remove}><TrashIcon />{copy.remove}</Button>
+			<Button disabled={upstream === null || busy} variant="outline" onclick={toggle}><PowerIcon />{upstream?.enabled === false ? copy.enable : copy.disable}</Button>
+			<Button disabled={upstream === null || busy} variant="destructive" onclick={() => { message = ''; removeOpen = true; }}><TrashIcon />{copy.remove}</Button>
 		</div>
 	</div>
 
-	{#if message}<p class="rounded-md border border-border bg-white/[0.03] p-3 text-sm text-red-300">{message}</p>{/if}
+	{#if message}<p role="alert" class="rounded-md border border-border bg-white/[0.03] p-3 text-sm text-red-300">{message}</p>{/if}
 
 	<div class="grid gap-4 md:grid-cols-2">
 		<Card.Root class="rounded-lg">
@@ -135,9 +196,11 @@
 		<Card.Root class="rounded-lg">
 			<Card.Header><Card.Title>{copy.state}</Card.Title></Card.Header>
 			<Card.Content class="space-y-2 text-sm text-muted-foreground">
-				<div>enabled: <span class={upstream?.enabled === false ? 'text-red-300' : 'text-emerald-300'}>{upstream?.enabled === false ? 'false' : 'true'}</span></div>
+				<div>Availability: <span class={upstream === null ? 'text-muted-foreground' : upstream.enabled === false ? 'text-red-300' : 'text-emerald-300'}>{upstream === null ? 'Unavailable' : upstream.enabled === false ? 'Disabled' : 'Enabled'}</span></div>
+				<div>Runtime: <span class={runtime?.State === 'healthy' ? 'text-emerald-300' : 'text-amber-300'}>{runtime?.State ?? (upstream === null ? 'Unavailable' : 'Unknown')}</span></div>
+				{#if runtime?.Summary}<p>{runtime.Summary}</p>{/if}
 				<div>{copy.dns}: <span class="font-mono text-white">{upstream?.dns?.join(', ') || 'default'}</span></div>
-				<div>service: <span class="font-mono text-white">{upstream?.service || 'auto'}</span></div>
+				<div>service: <span class="font-mono text-white">{runtime?.Service || upstream?.service || 'Not required'}</span></div>
 			</Card.Content>
 		</Card.Root>
 	</div>
@@ -147,23 +210,25 @@
 			<Card.Header><Card.Title>{copy.snx}</Card.Title></Card.Header>
 			<Card.Content class="space-y-4">
 				{#if pending.pending}
-					<label class="grid gap-1.5 text-xs text-muted-foreground">{pending.label || pending.step_type || copy.value}<Input bind:value={value} type="password" /></label>
+					<label class="grid gap-1.5 text-xs text-muted-foreground">{pending.label || pending.step_type || copy.value}<Input bind:ref={stepInput} bind:value={value} type="password" autocomplete="one-time-code" /></label>
 					<div class="flex flex-wrap gap-2">
-						<Button onclick={() => snx('submit', { [pending.step ?? pending.step_type ?? 'value']: value })}><PaperPlaneTiltIcon />{copy.submit}</Button>
-						<Button variant="outline" onclick={() => snx('cancel')}><XIcon />{copy.cancel}</Button>
+						<Button disabled={authenticating || value.trim() === ''} onclick={() => snx('submit', { [pending.step ?? pending.step_type ?? 'value']: value })}><PaperPlaneTiltIcon />{copy.submit}</Button>
+						<Button disabled={authenticating} variant="outline" onclick={() => snx('cancel')}><XIcon />{copy.cancel}</Button>
 					</div>
 				{:else}
 					<div class="grid gap-3 md:grid-cols-2">
-						<label class="grid gap-1.5 text-xs text-muted-foreground">{copy.username}<Input bind:value={username} /></label>
-						<label class="grid gap-1.5 text-xs text-muted-foreground">{copy.password}<Input bind:value={password} type="password" /></label>
+						<label class="grid gap-1.5 text-xs text-muted-foreground">{copy.username}<Input bind:ref={usernameInput} bind:value={username} autocomplete="username" /></label>
+						<label class="grid gap-1.5 text-xs text-muted-foreground">{copy.password}<Input bind:value={password} type="password" autocomplete="current-password" /></label>
 					</div>
 					<div class="flex flex-wrap gap-2">
-						<Button onclick={() => snx('start', { username, password })}><PowerIcon />{copy.start}</Button>
-						<Button variant="outline" onclick={() => snx('disconnect')}><XIcon />{copy.disconnect}</Button>
+						<Button disabled={authenticating || username.trim() === '' || password === ''} onclick={() => snx('start', { username, password })}><PowerIcon />{copy.start}</Button>
+						<Button disabled={authenticating} variant="outline" onclick={() => snx('disconnect')}><XIcon />{copy.disconnect}</Button>
 					</div>
 				{/if}
-				{#if output}<div><div class="mb-2 text-xs text-muted-foreground">{copy.output}</div><pre class="max-h-72 overflow-auto rounded-md border border-border bg-black/35 p-4 text-xs text-white/80">{output}</pre></div>{/if}
+				{#if output}<div><div class="mb-2 text-xs text-muted-foreground">{copy.output}</div><pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-black/35 p-4 text-xs text-white/80">{output}</pre></div>{/if}
 			</Card.Content>
 		</Card.Root>
 	{/if}
 </section>
+
+<ConfirmAction bind:open={removeOpen} title={`Delete upstream ${name}?`} description="Remove this upstream from Granger. Installed protocol packages will remain available. Connections referenced by routing rules or users cannot be deleted." action="Delete upstream" danger busy={busy} error={message} onconfirm={remove} />

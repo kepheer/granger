@@ -22,11 +22,11 @@
 	};
 
 	type CommandResult = {
-		title: string;
-		command: string;
-		output: string;
-		ok: boolean;
-		status: string;
+		Title: string;
+		Command: string;
+		Output: string;
+		OK: boolean;
+		Status: string;
 	};
 
 	const copy = {
@@ -38,7 +38,7 @@
 		type: 'Type',
 		iface: 'Interface',
 		config: 'Config',
-		status: 'Status',
+		status: 'Availability',
 		enabled: 'enabled',
 		disabled: 'disabled',
 		pending: 'pending',
@@ -49,61 +49,16 @@
 		installed: 'Installed',
 		install: 'Install',
 		manual: 'Manual source required',
-		unavailable: 'Installer unavailable in dev mode',
+		unavailable: 'Could not reach the server. Refresh to try again.',
 		refresh: 'Refresh',
 		installLog: 'Installation log'
 	} as const;
 
-	let protocols = $state<ProtocolStatus[]>([
-		{
-			name: 'wireguard',
-			display_name: 'WireGuard',
-			installed: false,
-			installable: true,
-			state: 'unknown',
-			summary: 'wireguard-tools'
-		},
-		{
-			name: 'openvpn',
-			display_name: 'OpenVPN',
-			installed: false,
-			installable: true,
-			state: 'unknown',
-			summary: 'openvpn'
-		},
-		{
-			name: 'amneziawg',
-			display_name: 'AmneziaWG',
-			installed: false,
-			installable: true,
-			state: 'available',
-			summary: 'Managed installer uses the upstream Amnezia package source.'
-		},
-		{
-			name: 'snx-rs',
-			display_name: 'SNX-RS',
-			installed: false,
-			installable: true,
-			state: 'available',
-			summary: 'Managed installer uses the upstream SNX-RS APT repository.'
-		},
-		{
-			name: 'xray',
-			display_name: 'Xray',
-			installed: false,
-			installable: true,
-			state: 'unknown',
-			summary: 'xray'
-		},
-		{
-			name: 'sing-box',
-			display_name: 'sing-box',
-			installed: false,
-			installable: true,
-			state: 'unknown',
-			summary: 'sing-box'
-		}
-	]);
+	let protocols = $state<ProtocolStatus[]>([]);
+	let protocolsLoading = $state(true);
+	let upstreamsLoading = $state(true);
+	let upstreamError = $state('');
+	let protocolFailed = $state(false);
 
 	let protocolMessage = $state('');
 	let installing = $state('');
@@ -117,39 +72,61 @@
 	async function loadProtocols() {
 		try {
 			const response = await fetch('/api/protocols');
-			if (!response.ok) throw new Error(response.statusText);
+			if (response.ok === false) {
+				throw new Error(response.statusText);
+			}
 			const body = (await response.json()) as ApiResponse<ProtocolStatus[]>;
-			if (body.data) protocols = body.data;
+			if (body.ok !== true || Array.isArray(body.data) === false) {
+				throw new Error(body.error ?? copy.unavailable);
+			}
+			protocols = body.data ?? [];
+			protocolFailed = false;
 			protocolMessage = '';
 		} catch {
+			protocolFailed = true;
 			protocolMessage = copy.unavailable;
+		} finally {
+			protocolsLoading = false;
 		}
 	}
 
 	async function loadUpstreams() {
 		try {
 			const response = await fetch('/api/config');
-			if (!response.ok) throw new Error(response.statusText);
+			if (response.ok === false) {
+				throw new Error(response.statusText);
+			}
 			const body = await response.json();
-			const configured = body.config?.upstreams ?? {};
+			if (body.ok !== true || body.config === undefined) {
+				throw new Error(body.error ?? 'Could not load upstreams');
+			}
+			const configured = body.config.upstreams ?? {};
 			upstreams = Object.entries(configured).map(([name, value]) => {
 				const item = value as Record<string, unknown>;
 				return {
 					name,
 					type: String(item.type ?? ''),
 					iface: String(item.interface ?? ''),
-					config: String(item.config ?? 'managed configuration'),
+					config: String(item.config || (item.type === 'direct' ? 'System uplink' : item.type === 'interface' ? 'Existing network interface' : 'No configuration')),
 					status: item.enabled === false ? 'disabled' : 'enabled'
 				};
 			});
-		} catch {
-			// Keep preview data while running the frontend without the Go backend.
+			upstreamError = '';
+		} catch (error) {
+			upstreamError = error instanceof Error ? error.message : String(error);
+		} finally {
+			upstreamsLoading = false;
 		}
 	}
 
 	async function installProtocol(name: string) {
+		if (installing !== '') {
+			return;
+		}
+
 		installing = name;
-		protocolMessage = '';
+		protocolMessage = 'Installing driver. This may take several minutes…';
+		protocolFailed = false;
 		protocolResults = [];
 		try {
 			const response = await fetch('/api/protocols/install', {
@@ -159,40 +136,21 @@
 			});
 			const body = (await response.json()) as ApiResponse<ProtocolStatus>;
 			if (body.data) {
-				protocols = protocols.map((item) => (item.name === name ? body.data! : item));
+				const status = body.data;
+				protocols = protocols.map((item) => (item.name === name ? status : item));
 			}
+			protocolFailed = response.ok === false || body.ok !== true;
 			protocolResults = body.results ?? body.data?.commands ?? [];
 			protocolMessage = body.error ?? body.data?.summary ?? '';
 		} catch {
+			protocolFailed = true;
 			protocolMessage = copy.unavailable;
 		} finally {
 			installing = '';
 		}
 	}
 
-	let upstreams = $state([
-		{
-			name: 'direct_ru',
-			type: 'direct',
-			iface: 'auto',
-			config: 'system uplink',
-			status: 'enabled'
-		},
-		{
-			name: 'default_awg',
-			type: 'amneziawg',
-			iface: 'awg0',
-			config: '/etc/granger/upstreams/awg0.conf',
-			status: 'enabled'
-		},
-		{
-			name: 'media_singbox',
-			type: 'sing-box',
-			iface: 'tun-sb0',
-			config: '/etc/granger/upstreams/media.json',
-			status: 'pending'
-		}
-	]);
+	let upstreams = $state<Array<{ name: string; type: string; iface: string; config: string; status: string }>>([]);
 </script>
 
 <svelte:head>
@@ -214,11 +172,11 @@
 				<Card.Title>{copy.packages}</Card.Title>
 				<Card.Description>{copy.packagesHint}</Card.Description>
 			</div>
-			<Button variant="outline" onclick={loadProtocols}><ArrowClockwiseIcon />{copy.refresh}</Button>
+			<Button disabled={installing !== ''} variant="outline" onclick={loadProtocols}><ArrowClockwiseIcon />{copy.refresh}</Button>
 		</Card.Header>
 		<Card.Content class="space-y-3">
 			{#if protocolMessage}
-				<div class="rounded-md border border-border bg-white/[0.03] px-3 py-2 text-sm text-muted-foreground">
+				<div role={protocolFailed ? 'alert' : 'status'} class="rounded-md border border-border bg-white/[0.03] px-3 py-2 text-sm {protocolFailed ? 'text-red-300' : 'text-muted-foreground'}">
 					{protocolMessage}
 				</div>
 			{/if}
@@ -231,20 +189,21 @@
 						{#each protocolResults as result}
 							<div class="space-y-2 p-4">
 								<div class="flex items-center justify-between gap-3">
-									<div class="text-sm font-medium text-white">{result.title}</div>
-									<span class={result.ok ? 'text-xs text-emerald-300' : 'text-xs text-red-300'}>
-										{result.status}
+									<div class="text-sm font-medium text-white">{result.Title}</div>
+									<span class={result.OK ? 'text-xs text-emerald-300' : 'text-xs text-red-300'}>
+										{result.Status}
 									</span>
 								</div>
-								<pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-black/35 p-3 text-xs text-white/75">$ {result.command}
-{result.output}</pre>
+								<pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-black/35 p-3 text-xs text-white/75">$ {result.Command}
+{result.Output}</pre>
 							</div>
 						{/each}
 					</div>
 				</div>
 			{/if}
 			<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-				{#each protocols as protocol}
+				{#if protocolsLoading}<p role="status" class="text-sm text-muted-foreground">Loading driver status…</p>{/if}
+			{#each protocols as protocol}
 					<div class="rounded-lg border border-border bg-card/60 p-4">
 						<div class="flex items-start justify-between gap-3">
 							<div>
@@ -270,11 +229,11 @@
 						<div class="mt-4">
 							<Button
 								size="sm"
-								variant={protocol.installable && !protocol.installed ? 'default' : 'outline'}
-								disabled={!protocol.installable || protocol.installed || installing === protocol.name}
+								variant={protocol.installable && protocol.installed === false ? 'default' : 'outline'}
+								disabled={protocol.installable === false || protocol.installed || installing !== ''}
 								onclick={() => installProtocol(protocol.name)}
 							>
-								{installing === protocol.name ? copy.pending : copy.install}
+								{installing === protocol.name ? 'Installing…' : protocol.state === 'failed' ? 'Retry installation' : copy.install}
 							</Button>
 						</div>
 					</div>
@@ -289,6 +248,10 @@
 			<Card.Description>{copy.hint}</Card.Description>
 		</Card.Header>
 		<Card.Content>
+			{#if upstreamError}<p role="alert" class="mb-3 text-sm text-red-300">{upstreamError}</p>{/if}
+			{#if upstreamsLoading}<p role="status" class="mb-3 text-sm text-muted-foreground">Loading upstreams…</p>{/if}
+			{#if upstreamsLoading === false && upstreamError === '' && upstreams.length === 0}<p class="mb-3 text-sm text-muted-foreground">No upstreams configured. Add an outgoing connection to route user traffic.</p>{/if}
+			{#if upstreams.length > 0}
 			<div class="overflow-x-auto rounded-lg border border-border">
 				<div class="grid min-w-[760px] grid-cols-[1.1fr_.9fr_.9fr_1.8fr_.8fr] bg-white/[0.035] px-4 py-2 text-xs font-medium text-muted-foreground">
 					<div>{copy.name}</div>
@@ -325,6 +288,7 @@
 					</a>
 				{/each}
 			</div>
+			{/if}
 		</Card.Content>
 	</Card.Root>
 </section>

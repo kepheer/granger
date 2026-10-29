@@ -43,8 +43,14 @@
 			data-sidebar="sidebar"
 			data-slot="sidebar"
 			data-mobile="true"
+			onclick={(event) => {
+				const target = event.target;
+				if (target instanceof Element && target.closest('a[href]') !== null) {
+					sidebar.setOpenMobile(false);
+				}
+			}}
 			class={cn(
-				'bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden',
+				'bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0',
 				className
 			)}
 			style="--sidebar-width: {SIDEBAR_WIDTH_MOBILE};"

@@ -12,12 +12,12 @@
 	} from 'phosphor-svelte';
 
 	type RuntimeStatus = {
-		name: string;
-		type: string;
-		state: string;
-		summary: string;
-		interface?: string;
-		service?: string;
+		Name: string;
+		Type: string;
+		State: string;
+		Summary: string;
+		Interface?: string;
+		Service?: string;
 	};
 
 	type Dashboard = {
@@ -47,6 +47,7 @@
 		users: 'Issued profiles',
 		runtime: 'Tunnels and services',
 		empty: 'No tunnels configured yet.',
+		loading: 'Loading tunnel status…',
 		unavailable: 'Runtime metrics are unavailable while the backend is not connected.'
 	} as const;
 
@@ -62,8 +63,19 @@
 	async function load() {
 		try {
 			const response = await fetch('/api/dashboard');
-			if (!response.ok) throw new Error(response.statusText);
+			if (response.ok === false) {
+				throw new Error(response.statusText);
+			}
 			const body = await response.json();
+
+			if (
+				body.ok !== true ||
+				Array.isArray(body.data?.runtime) === false ||
+				body.data.runtime.every(isRuntimeStatus) === false
+			) {
+				throw new Error('Invalid dashboard runtime response');
+			}
+
 			dashboard = body.data as Dashboard;
 			error = '';
 		} catch {
@@ -71,11 +83,38 @@
 		}
 	}
 
-	function percent(value = 0) {
+	function isRuntimeStatus(value: unknown): value is RuntimeStatus {
+		if (typeof value !== 'object' || value === null) {
+			return false;
+		}
+
+		const item = value as Record<string, unknown>;
+
+		return (
+			typeof item.Name === 'string' &&
+			item.Name.trim() !== '' &&
+			typeof item.Type === 'string' &&
+			item.Type.trim() !== '' &&
+			typeof item.State === 'string' &&
+			item.State.trim() !== '' &&
+			typeof item.Summary === 'string' &&
+			item.Summary.trim() !== ''
+		);
+	}
+
+	function percent(value?: number) {
+		if (value === undefined) {
+			return '—';
+		}
+
 		return `${value.toFixed(1)}%`;
 	}
 
-	function bytes(value = 0) {
+	function bytes(value?: number) {
+		if (value === undefined) {
+			return '—';
+		}
+
 		const units = ['B', 'KB', 'MB', 'GB', 'TB'];
 		let result = value;
 		let index = 0;
@@ -106,7 +145,7 @@
 	</div>
 
 	{#if error}
-		<div class="rounded-md border border-border bg-white/[0.03] px-4 py-3 text-sm text-muted-foreground">{error}</div>
+		<div role="alert" class="rounded-md border border-border bg-white/[0.03] px-4 py-3 text-sm text-muted-foreground">{error}</div>
 	{/if}
 
 	<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -154,15 +193,17 @@
 	<Card.Root class="rounded-lg">
 		<Card.Header><Card.Title>{copy.runtime}</Card.Title></Card.Header>
 		<Card.Content class="space-y-2">
-			{#if !dashboard || dashboard.runtime.length === 0}
+			{#if dashboard === null}
+				<p class="text-sm text-muted-foreground" role="status">{error || copy.loading}</p>
+			{:else if dashboard.runtime.length === 0}
 				<p class="text-sm text-muted-foreground">{copy.empty}</p>
 			{:else}
 				{#each dashboard.runtime as item}
 					<div class="grid gap-1 rounded-md border border-border bg-white/[0.025] px-3 py-3 text-sm md:grid-cols-[1fr_.7fr_.7fr_1.5fr]">
-						<div class="font-medium text-white">{item.name}</div>
-						<div class="text-muted-foreground">{item.type}</div>
-						<div class={stateClass(item.state)}>{item.state}</div>
-						<div class="text-muted-foreground">{item.summary}</div>
+						<div class="font-medium text-white">{item.Name}</div>
+						<div class="text-muted-foreground">{item.Type}</div>
+						<div class={stateClass(item.State)}>{item.State}</div>
+						<div class="text-muted-foreground">{item.Summary}</div>
 					</div>
 				{/each}
 			{/if}

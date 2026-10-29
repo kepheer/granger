@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ConfirmAction from '$lib/components/confirm-action.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -25,16 +26,21 @@
 	let message = $state('');
 	let failed = $state(false);
 	let saving = $state(false);
+	let confirmOpen = $state(false);
 
 	async function chooseFile(event: Event) {
 		const file = (event.currentTarget as HTMLInputElement).files?.[0];
-		if (!file) return;
+		if (file === undefined || file === null) {
+			return;
+		}
 		yaml = await file.text();
 		message = '';
 	}
 
 	async function importConfig() {
-		if (!yaml.trim() || !confirm(copy.confirm)) return;
+		if (yaml.trim() === '' || saving) {
+			return;
+		}
 		saving = true;
 		message = '';
 		failed = false;
@@ -45,8 +51,11 @@
 				body: JSON.stringify({ config: yaml })
 			});
 			const body = await response.json();
-			if (!response.ok || !body.ok) throw new Error(body.error ?? 'apply failed');
+			if (response.ok === false || body.ok !== true) {
+				throw new Error(body.error ?? 'apply failed');
+			}
 			message = copy.success;
+			confirmOpen = false;
 		} catch (error) {
 			failed = true;
 			message = `${copy.error}: ${error instanceof Error ? error.message : String(error)}`;
@@ -90,8 +99,10 @@
 				{copy.paste}
 				<Textarea bind:value={yaml} class="min-h-80 font-mono text-xs" placeholder="server:&#10;  uplink_if: eth0&#10;outputs: &#123;&#125;&#10;upstreams: &#123;&#125;&#10;rules: []" />
 			</label>
-			{#if message}<p class="text-sm {failed ? 'text-red-300' : 'text-emerald-300'}">{message}</p>{/if}
-			<Button disabled={saving || !yaml.trim()} onclick={importConfig}><UploadSimpleIcon />{copy.import}</Button>
+			{#if message}<p role={failed ? 'alert' : 'status'} class="text-sm {failed ? 'text-red-300' : 'text-emerald-300'}">{message}</p>{/if}
+			<Button disabled={saving || yaml.trim() === ''} onclick={() => { message = ''; confirmOpen = true; }}><UploadSimpleIcon />{copy.import}</Button>
 		</Card.Content>
 	</Card.Root>
 </section>
+
+<ConfirmAction bind:open={confirmOpen} title="Import configuration?" description="This replaces the active configuration and applies its routes immediately. A backup of the current configuration will be saved." action="Import and apply" busy={saving} error={failed ? message : ''} onconfirm={importConfig} />
