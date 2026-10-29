@@ -15,8 +15,8 @@ func (XrayOutput) Type() string               { return "xray" }
 func (XrayOutput) DisplayName() string        { return "Xray" }
 func (XrayOutput) Capabilities() []Capability { return []Capability{CapClientConfig} }
 
-func (XrayOutput) GenerateServerConfig(name string, out config.Output, _ ApplyContext) []runner.Result {
-	return checkConfigFile("Xray output config "+name, out.Config)
+func (XrayOutput) GenerateServerConfig(name string, out config.Output, ctx ApplyContext) []runner.Result {
+	return prepareManagedProxy(name, out, ctx)
 }
 
 func (XrayOutput) GenerateClientConfig(_ string, out config.Output, ctx ApplyContext) (string, []runner.Result) {
@@ -32,15 +32,15 @@ func (XrayOutput) GenerateClientConfig(_ string, out config.Output, ctx ApplyCon
 }
 
 func (XrayOutput) Start(name string, out config.Output, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Start Xray output "+name, "start", xrayService(out.Service, name, out.Config, out.Interface), xrayFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Start Xray output "+name, "start", xrayService(out.Service, name, out.Config, out.Interface), fallbackForService(out.Service, xrayFallbackService()))}
 }
 
 func (XrayOutput) Stop(name string, out config.Output, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Stop Xray output "+name, "stop", xrayService(out.Service, name, out.Config, out.Interface), xrayFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Stop Xray output "+name, "stop", xrayService(out.Service, name, out.Config, out.Interface), fallbackForService(out.Service, xrayFallbackService()))}
 }
 
 func (XrayOutput) Restart(name string, out config.Output, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Restart Xray output "+name, "restart", xrayService(out.Service, name, out.Config, out.Interface), xrayFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Restart Xray output "+name, "restart", xrayService(out.Service, name, out.Config, out.Interface), fallbackForService(out.Service, xrayFallbackService()))}
 }
 
 func (d XrayOutput) Status(name string, out config.Output, ctx ApplyContext) RuntimeStatus {
@@ -68,15 +68,15 @@ func (XrayUpstream) NormalizeConfig(name string, up config.Upstream, _ ApplyCont
 }
 
 func (XrayUpstream) Start(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Start Xray upstream "+name, "start", xrayService(up.Service, name, up.Config, up.Interface), xrayFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Start Xray upstream "+name, "start", xrayService(up.Service, name, up.Config, up.Interface), fallbackForService(up.Service, xrayFallbackService()))}
 }
 
 func (XrayUpstream) Stop(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Stop Xray upstream "+name, "stop", xrayService(up.Service, name, up.Config, up.Interface), xrayFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Stop Xray upstream "+name, "stop", xrayService(up.Service, name, up.Config, up.Interface), fallbackForService(up.Service, xrayFallbackService()))}
 }
 
 func (XrayUpstream) Restart(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Restart Xray upstream "+name, "restart", xrayService(up.Service, name, up.Config, up.Interface), xrayFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Restart Xray upstream "+name, "restart", xrayService(up.Service, name, up.Config, up.Interface), fallbackForService(up.Service, xrayFallbackService()))}
 }
 
 func (d XrayUpstream) Status(name string, up config.Upstream, ctx ApplyContext) RuntimeStatus {

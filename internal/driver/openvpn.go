@@ -13,12 +13,12 @@ func (OpenVPNOutput) Type() string               { return "openvpn" }
 func (OpenVPNOutput) DisplayName() string        { return "OpenVPN" }
 func (OpenVPNOutput) Capabilities() []Capability { return []Capability{CapClientConfig} }
 
-func (OpenVPNOutput) GenerateServerConfig(name string, out config.Output, _ ApplyContext) []runner.Result {
+func (OpenVPNOutput) GenerateServerConfig(name string, out config.Output, ctx ApplyContext) []runner.Result {
 	if out.Config == "" {
 		return nil
 	}
 	profile := openVPNProfileName(name, out.Config, out.Interface)
-	return []runner.Result{activateConfig("Activate OpenVPN server config "+name, out.Config, "/etc/openvpn/server/"+profile+".conf")}
+	return []runner.Result{activateConfig("Activate OpenVPN server config "+name, out.Config, "/etc/openvpn/server/"+profile+".conf", ctx)}
 }
 
 func (OpenVPNOutput) GenerateClientConfig(_ string, out config.Output, ctx ApplyContext) (string, []runner.Result) {
@@ -34,15 +34,15 @@ func (OpenVPNOutput) GenerateClientConfig(_ string, out config.Output, ctx Apply
 }
 
 func (OpenVPNOutput) Start(name string, out config.Output, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Start OpenVPN output "+name, "start", openVPNService(out.Service, "server", name, out.Config, out.Interface), openVPNFallbackService(name, out.Config, out.Interface))}
+	return []runner.Result{systemctlWithFallback(ctx, "Start OpenVPN output "+name, "start", openVPNService(out.Service, "server", name, out.Config, out.Interface), fallbackForService(out.Service, openVPNFallbackService(name, out.Config, out.Interface)))}
 }
 
 func (OpenVPNOutput) Stop(name string, out config.Output, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Stop OpenVPN output "+name, "stop", openVPNService(out.Service, "server", name, out.Config, out.Interface), openVPNFallbackService(name, out.Config, out.Interface))}
+	return []runner.Result{systemctlWithFallback(ctx, "Stop OpenVPN output "+name, "stop", openVPNService(out.Service, "server", name, out.Config, out.Interface), fallbackForService(out.Service, openVPNFallbackService(name, out.Config, out.Interface)))}
 }
 
 func (OpenVPNOutput) Restart(name string, out config.Output, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Restart OpenVPN output "+name, "restart", openVPNService(out.Service, "server", name, out.Config, out.Interface), openVPNFallbackService(name, out.Config, out.Interface))}
+	return []runner.Result{systemctlWithFallback(ctx, "Restart OpenVPN output "+name, "restart", openVPNService(out.Service, "server", name, out.Config, out.Interface), fallbackForService(out.Service, openVPNFallbackService(name, out.Config, out.Interface)))}
 }
 
 func (d OpenVPNOutput) Status(name string, out config.Output, ctx ApplyContext) RuntimeStatus {
@@ -61,24 +61,24 @@ func (OpenVPNUpstream) Capabilities() []Capability {
 	return []Capability{CapDefaultRoute, CapDomainRoute, CapCIDRRoute}
 }
 
-func (OpenVPNUpstream) NormalizeConfig(name string, up config.Upstream, _ ApplyContext) []runner.Result {
+func (OpenVPNUpstream) NormalizeConfig(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
 	if up.Config == "" {
 		return nil
 	}
 	profile := openVPNProfileName(name, up.Config, up.Interface)
-	return []runner.Result{activateConfig("Activate OpenVPN upstream config "+name, up.Config, "/etc/openvpn/client/"+profile+".conf")}
+	return []runner.Result{activateConfig("Activate OpenVPN upstream config "+name, up.Config, "/etc/openvpn/client/"+profile+".conf", ctx)}
 }
 
 func (OpenVPNUpstream) Start(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Start OpenVPN upstream "+name, "start", openVPNService(up.Service, "client", name, up.Config, up.Interface), openVPNFallbackService(name, up.Config, up.Interface))}
+	return []runner.Result{systemctlWithFallback(ctx, "Start OpenVPN upstream "+name, "start", openVPNService(up.Service, "client", name, up.Config, up.Interface), fallbackForService(up.Service, openVPNFallbackService(name, up.Config, up.Interface)))}
 }
 
 func (OpenVPNUpstream) Stop(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Stop OpenVPN upstream "+name, "stop", openVPNService(up.Service, "client", name, up.Config, up.Interface), openVPNFallbackService(name, up.Config, up.Interface))}
+	return []runner.Result{systemctlWithFallback(ctx, "Stop OpenVPN upstream "+name, "stop", openVPNService(up.Service, "client", name, up.Config, up.Interface), fallbackForService(up.Service, openVPNFallbackService(name, up.Config, up.Interface)))}
 }
 
 func (OpenVPNUpstream) Restart(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Restart OpenVPN upstream "+name, "restart", openVPNService(up.Service, "client", name, up.Config, up.Interface), openVPNFallbackService(name, up.Config, up.Interface))}
+	return []runner.Result{systemctlWithFallback(ctx, "Restart OpenVPN upstream "+name, "restart", openVPNService(up.Service, "client", name, up.Config, up.Interface), fallbackForService(up.Service, openVPNFallbackService(name, up.Config, up.Interface)))}
 }
 
 func (d OpenVPNUpstream) Status(name string, up config.Upstream, ctx ApplyContext) RuntimeStatus {
@@ -93,6 +93,6 @@ func (OpenVPNUpstream) ApplyFirewall(name string, up config.Upstream, ctx ApplyC
 	return applyUpstreamFirewall(name, up, ctx)
 }
 
-func (OpenVPNUpstream) RenderDNS(name string, up config.Upstream, rules []config.Rule, _ ApplyContext) []DNSRule {
+func (OpenVPNUpstream) RenderDNS(name string, up config.Upstream, rules []config.Rule, ctx ApplyContext) []DNSRule {
 	return renderDomainDNS(name, up, rules)
 }

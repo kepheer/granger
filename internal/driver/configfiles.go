@@ -9,12 +9,15 @@ import (
 	"granger/pkg/runner"
 )
 
-func activateConfig(title, src, dst string) runner.Result {
+func activateConfig(title, src, dst string, ctx ApplyContext) runner.Result {
 	if strings.TrimSpace(src) == "" {
 		return runner.Result{Title: title, Command: "config", Output: "config path is empty", OK: false, Status: "error"}
 	}
 	if _, err := os.Stat(src); err != nil {
 		return runner.Result{Title: title, Command: src, Output: err.Error(), OK: false, Status: "error"}
+	}
+	if ctx.Runner.DryRun {
+		return runner.Result{Title: title, Command: dst, Output: "would activate " + src, OK: true, Status: "dry-run"}
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
 		return runner.Result{Title: title, Command: dst, Output: err.Error(), OK: false, Status: "error"}

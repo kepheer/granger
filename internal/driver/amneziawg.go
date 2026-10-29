@@ -16,7 +16,7 @@ func (AmneziaWGOutput) Type() string               { return "amneziawg" }
 func (AmneziaWGOutput) DisplayName() string        { return "AmneziaWG" }
 func (AmneziaWGOutput) Capabilities() []Capability { return []Capability{CapClientConfig} }
 
-func (AmneziaWGOutput) GenerateServerConfig(name string, out config.Output, _ ApplyContext) []runner.Result {
+func (AmneziaWGOutput) GenerateServerConfig(name string, out config.Output, ctx ApplyContext) []runner.Result {
 	if out.Config == "" {
 		return nil
 	}
@@ -66,14 +66,17 @@ func (AmneziaWGUpstream) Capabilities() []Capability {
 	return []Capability{CapDefaultRoute, CapDomainRoute, CapCIDRRoute}
 }
 
-func (AmneziaWGUpstream) NormalizeConfig(name string, up config.Upstream, _ ApplyContext) []runner.Result {
+func (AmneziaWGUpstream) NormalizeConfig(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
 	if up.Config == "" {
 		return nil
+	}
+	if ctx.Runner.DryRun {
+		return checkConfigFile("Preview upstream config "+name, up.Config)
 	}
 	if err := normalizeQuickConfig(up.Config); err != nil {
 		return []runner.Result{{Title: "Normalize AmneziaWG upstream config " + name, Command: up.Config, Output: err.Error(), OK: false, Status: "error"}}
 	}
-	return []runner.Result{activateConfig("Activate AmneziaWG upstream config "+name, up.Config, "/etc/amnezia/amneziawg/"+safeName(up.Interface)+".conf")}
+	return []runner.Result{activateConfig("Activate AmneziaWG upstream config "+name, up.Config, "/etc/amnezia/amneziawg/"+safeName(up.Interface)+".conf", ctx)}
 }
 
 func (AmneziaWGUpstream) Start(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
@@ -129,7 +132,7 @@ func (AmneziaWGUpstream) ApplyFirewall(name string, up config.Upstream, ctx Appl
 	return applyUpstreamFirewall(name, up, ctx)
 }
 
-func (AmneziaWGUpstream) RenderDNS(name string, up config.Upstream, rules []config.Rule, _ ApplyContext) []DNSRule {
+func (AmneziaWGUpstream) RenderDNS(name string, up config.Upstream, rules []config.Rule, ctx ApplyContext) []DNSRule {
 	return renderDomainDNS(name, up, rules)
 }
 

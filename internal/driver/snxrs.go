@@ -67,7 +67,8 @@ func (SNXRSUpstream) ApplyRoutes(name string, up config.Upstream, ctx ApplyConte
 	tableID := strconv.Itoa(routeTableID(name))
 	mark := fwmark(name)
 	res := []runner.Result{
-		ensureIPRule(ctx, "fwmark "+mark, tableID, strconv.Itoa(10000+routeTableID(name)%20000)),
+		ctx.Runner.Run("Protect SNX-RS route table "+name, 10*time.Second, nil, "ip", "route", "replace", "unreachable", "default", "metric", "32760", "table", tableID),
+		ensureIPRule(ctx, "fwmark "+mark+"/0xffff", tableID, strconv.Itoa(10000+routeTableID(name)%20000)),
 	}
 	if !snxInterfaceUp(up, ctx) {
 		for _, rule := range ctx.Config.Rules {
@@ -80,6 +81,20 @@ func (SNXRSUpstream) ApplyRoutes(name string, up config.Upstream, ctx ApplyConte
 		}
 		res = append(res, runner.Result{Title: "SNX-RS routes " + name, Command: "ip link show " + up.Interface, Output: "SNX-RS is not connected; routes are pending until " + up.Interface + " exists", OK: true, Status: "pending"})
 		return res
+	}
+	needsDefault := false
+	for _, rule := range ctx.Config.Rules {
+		if rule.Via == name && rule.Default {
+			needsDefault = true
+		}
+	}
+	for _, user := range ctx.Config.Users {
+		if user.DefaultUpstream == name {
+			needsDefault = true
+		}
+	}
+	if needsDefault {
+		res = append(res, ctx.Runner.Run("SNX-RS default route "+name, 10*time.Second, nil, "ip", "route", "replace", "default", "dev", up.Interface, "table", tableID))
 	}
 	snxIP := snxIPv4(up, ctx)
 	for _, dnsIP := range up.DNS {
@@ -109,6 +124,9 @@ func (SNXRSUpstream) ApplyRoutes(name string, up config.Upstream, ctx ApplyConte
 }
 
 func (SNXRSUpstream) ApplyFirewall(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
+	if up.IsEnabled() && managedProxy(ctx.Output) {
+		return proxyFirewall(name, up, ctx)
+	}
 	if !up.IsEnabled() || ctx.Output.Interface == "" || ctx.ClientCIDR == "" {
 		return nil
 	}
@@ -138,29 +156,10 @@ func (SNXRSUpstream) ApplyFirewall(name string, up config.Upstream, ctx ApplyCon
 }
 
 func (SNXRSUpstream) RenderDNS(name string, up config.Upstream, rules []config.Rule, ctx ApplyContext) []DNSRule {
-	if !up.IsEnabled() {
+	if up.IsEnabled() == false {
 		return nil
 	}
-	connected := snxInterfaceUp(up, ctx)
-	var out []DNSRule
-	for _, rule := range rules {
-		if rule.Via != name {
-			continue
-		}
-		fallback := firstNonEmpty(rule.DomainFallbackVia, up.FallbackWhenDown)
-		for _, domain := range rule.Domains {
-			if connected && len(up.DNS) > 0 {
-				for _, server := range up.DNS {
-					out = append(out, DNSRule{Domain: domain, Server: server, Set: ipsetName(name)})
-				}
-				continue
-			}
-			if fallback != "" && fallback != "pending" {
-				out = append(out, DNSRule{Domain: domain, Set: ipsetName(fallback)})
-			}
-		}
-	}
-	return out
+	return renderDomainDNS(name, up, rules)
 }
 
 func snxRSService(explicit string) string {

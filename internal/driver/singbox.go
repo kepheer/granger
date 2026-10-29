@@ -15,8 +15,8 @@ func (SingBoxOutput) Type() string               { return "sing-box" }
 func (SingBoxOutput) DisplayName() string        { return "sing-box" }
 func (SingBoxOutput) Capabilities() []Capability { return []Capability{CapClientConfig} }
 
-func (SingBoxOutput) GenerateServerConfig(name string, out config.Output, _ ApplyContext) []runner.Result {
-	return checkConfigFile("sing-box output config "+name, out.Config)
+func (SingBoxOutput) GenerateServerConfig(name string, out config.Output, ctx ApplyContext) []runner.Result {
+	return prepareManagedProxy(name, out, ctx)
 }
 
 func (SingBoxOutput) GenerateClientConfig(_ string, out config.Output, ctx ApplyContext) (string, []runner.Result) {
@@ -32,15 +32,15 @@ func (SingBoxOutput) GenerateClientConfig(_ string, out config.Output, ctx Apply
 }
 
 func (SingBoxOutput) Start(name string, out config.Output, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Start sing-box output "+name, "start", singBoxService(out.Service, name, out.Config, out.Interface), singBoxFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Start sing-box output "+name, "start", singBoxService(out.Service, name, out.Config, out.Interface), fallbackForService(out.Service, singBoxFallbackService()))}
 }
 
 func (SingBoxOutput) Stop(name string, out config.Output, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Stop sing-box output "+name, "stop", singBoxService(out.Service, name, out.Config, out.Interface), singBoxFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Stop sing-box output "+name, "stop", singBoxService(out.Service, name, out.Config, out.Interface), fallbackForService(out.Service, singBoxFallbackService()))}
 }
 
 func (SingBoxOutput) Restart(name string, out config.Output, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Restart sing-box output "+name, "restart", singBoxService(out.Service, name, out.Config, out.Interface), singBoxFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Restart sing-box output "+name, "restart", singBoxService(out.Service, name, out.Config, out.Interface), fallbackForService(out.Service, singBoxFallbackService()))}
 }
 
 func (d SingBoxOutput) Status(name string, out config.Output, ctx ApplyContext) RuntimeStatus {
@@ -68,15 +68,15 @@ func (SingBoxUpstream) NormalizeConfig(name string, up config.Upstream, _ ApplyC
 }
 
 func (SingBoxUpstream) Start(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Start sing-box upstream "+name, "start", singBoxService(up.Service, name, up.Config, up.Interface), singBoxFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Start sing-box upstream "+name, "start", singBoxService(up.Service, name, up.Config, up.Interface), fallbackForService(up.Service, singBoxFallbackService()))}
 }
 
 func (SingBoxUpstream) Stop(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Stop sing-box upstream "+name, "stop", singBoxService(up.Service, name, up.Config, up.Interface), singBoxFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Stop sing-box upstream "+name, "stop", singBoxService(up.Service, name, up.Config, up.Interface), fallbackForService(up.Service, singBoxFallbackService()))}
 }
 
 func (SingBoxUpstream) Restart(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{systemctlWithFallback(ctx, "Restart sing-box upstream "+name, "restart", singBoxService(up.Service, name, up.Config, up.Interface), singBoxFallbackService())}
+	return []runner.Result{systemctlWithFallback(ctx, "Restart sing-box upstream "+name, "restart", singBoxService(up.Service, name, up.Config, up.Interface), fallbackForService(up.Service, singBoxFallbackService()))}
 }
 
 func (d SingBoxUpstream) Status(name string, up config.Upstream, ctx ApplyContext) RuntimeStatus {

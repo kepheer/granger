@@ -64,14 +64,17 @@ func (WireGuardUpstream) Capabilities() []Capability {
 	return []Capability{CapDefaultRoute, CapDomainRoute, CapCIDRRoute}
 }
 
-func (WireGuardUpstream) NormalizeConfig(name string, up config.Upstream, _ ApplyContext) []runner.Result {
+func (WireGuardUpstream) NormalizeConfig(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
 	if up.Config == "" {
 		return nil
+	}
+	if ctx.Runner.DryRun {
+		return checkConfigFile("Preview upstream config "+name, up.Config)
 	}
 	if err := normalizeQuickConfig(up.Config); err != nil {
 		return []runner.Result{{Title: "Normalize WireGuard upstream config " + name, Command: up.Config, Output: err.Error(), OK: false, Status: "error"}}
 	}
-	return []runner.Result{activateConfig("Activate WireGuard upstream config "+name, up.Config, "/etc/wireguard/"+safeName(up.Interface)+".conf")}
+	return []runner.Result{activateConfig("Activate WireGuard upstream config "+name, up.Config, "/etc/wireguard/"+safeName(up.Interface)+".conf", ctx)}
 }
 
 func (WireGuardUpstream) Start(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
@@ -98,7 +101,7 @@ func (WireGuardUpstream) ApplyFirewall(name string, up config.Upstream, ctx Appl
 	return applyUpstreamFirewall(name, up, ctx)
 }
 
-func (WireGuardUpstream) RenderDNS(name string, up config.Upstream, rules []config.Rule, _ ApplyContext) []DNSRule {
+func (WireGuardUpstream) RenderDNS(name string, up config.Upstream, rules []config.Rule, ctx ApplyContext) []DNSRule {
 	return renderDomainDNS(name, up, rules)
 }
 

@@ -2,7 +2,6 @@ package driver
 
 import (
 	"fmt"
-	"hash/fnv"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -24,11 +23,7 @@ func safeName(name string) string {
 	return safeNameRe.ReplaceAllString(name, "_")
 }
 
-func routeTableID(name string) int {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(name))
-	return 10000 + int(h.Sum32()%20000)
-}
+func routeTableID(name string) int { return netfilter.RouteTableID(name) }
 
 func RouteTableID(name string) int {
 	return routeTableID(name)
@@ -43,7 +38,7 @@ func ipsetName(name string) string {
 }
 
 func runShell(ctx ApplyContext, title, script string) runner.Result {
-	return ctx.Runner.RunSoft(title, 10*time.Second, nil, "sh", "-c", script)
+	return ctx.Runner.Run(title, 10*time.Second, nil, "sh", "-c", script)
 }
 
 func configuredService(explicit, fallback string) string {
@@ -102,9 +97,9 @@ func firstClientConfig(ctx ApplyContext, out config.Output) string {
 }
 
 func interfaceStatus(name, typ, iface, service string, caps []Capability, ctx ApplyContext) RuntimeStatus {
-	res := ctx.Runner.Run("Status "+typ+" "+name, 5*time.Second, nil, "ip", "-br", "addr", "show", iface)
+	res := ctx.Runner.Run("Status "+typ+" "+name, 5*time.Second, nil, "ip", "-o", "link", "show", "up", "dev", iface)
 	st := RuntimeStatus{Name: name, Type: typ, Interface: iface, Service: service, Capabilities: caps, Results: []runner.Result{res}}
-	if res.OK {
+	if res.OK && strings.TrimSpace(res.Output) != "" && res.Output != "(no output)" {
 		st.State = StateHealthy
 		st.Summary = iface + " is up"
 	} else {
@@ -132,7 +127,7 @@ func outputReturnRoute(ctx ApplyContext) []runner.Result {
 		return nil
 	}
 	return []runner.Result{
-		ctx.Runner.RunSoft("Return route "+ctx.Output.Interface, 10*time.Second, nil, "ip", "route", "replace", ctx.ClientCIDR, "dev", ctx.Output.Interface),
+		ctx.Runner.Run("Return route "+ctx.Output.Interface, 10*time.Second, nil, "ip", "route", "replace", ctx.ClientCIDR, "dev", ctx.Output.Interface),
 	}
 }
 
@@ -143,31 +138,35 @@ func applyUpstreamRoutes(name string, up config.Upstream, ctx ApplyContext) []ru
 	tableID := strconv.Itoa(routeTableID(name))
 	mark := fwmark(name)
 	var res []runner.Result
-	res = append(res, ctx.Runner.RunSoft("Route default "+name, 10*time.Second, nil, "ip", "route", "replace", "default", "dev", up.Interface, "table", tableID))
+	res = append(res, ctx.Runner.Run("Protect route table "+name, 10*time.Second, nil, "ip", "route", "replace", "unreachable", "default", "metric", "32760", "table", tableID))
+	res = append(res, ctx.Runner.Run("Route default "+name, 10*time.Second, nil, "ip", "route", "replace", "default", "dev", up.Interface, "table", tableID))
 	if ctx.ClientCIDR != "" && ctx.Output.Interface != "" {
-		res = append(res, ctx.Runner.RunSoft("Route return "+name, 10*time.Second, nil, "ip", "route", "replace", ctx.ClientCIDR, "dev", ctx.Output.Interface, "table", tableID))
+		res = append(res, ctx.Runner.Run("Route return "+name, 10*time.Second, nil, "ip", "route", "replace", ctx.ClientCIDR, "dev", ctx.Output.Interface, "table", tableID))
 	}
-	res = append(res, ensureIPRule(ctx, "fwmark "+mark, tableID, strconv.Itoa(10000+routeTableID(name)%20000)))
+	res = append(res, ensureIPRule(ctx, "fwmark "+mark+"/0xffff", tableID, strconv.Itoa(10000+routeTableID(name)%20000)))
 	for _, rule := range ctx.Config.Rules {
 		if rule.Via != name {
 			continue
 		}
 		if rule.Default && ctx.ClientCIDR != "" {
-			res = append(res, ensureIPRule(ctx, "from "+ctx.ClientCIDR, tableID, "30000"))
+			res = append(res, ensureIPRule(ctx, "from "+ctx.ClientCIDR, tableID, "31000"))
 		}
 	}
 	return res
 }
 
 func applyUpstreamFirewall(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
+	if managedProxy(ctx.Output) {
+		return proxyFirewall(name, up, ctx)
+	}
 	if up.Interface == "" || ctx.Output.Interface == "" || ctx.ClientCIDR == "" {
 		return nil
 	}
 	setName := ipsetName(name)
 	mark := fwmark(name)
 	var res []runner.Result
-	res = append(res, ctx.Runner.RunSoft("Create ipset "+setName, 10*time.Second, nil, "ipset", "create", setName, "hash:ip", "family", "inet", "timeout", "86400", "-exist"))
-	res = append(res, ctx.Runner.RunSoft("Flush ipset "+setName, 10*time.Second, nil, "ipset", "flush", setName))
+	res = append(res, ctx.Runner.Run("Create ipset "+setName, 10*time.Second, nil, "ipset", "create", setName, "hash:ip", "family", "inet", "timeout", "86400", "-exist"))
+	res = append(res, ctx.Runner.Run("Flush ipset "+setName, 10*time.Second, nil, "ipset", "flush", setName))
 	res = append(res, runShell(ctx, "Mark domain set "+name, netfilter.EnsureAppend("mangle", netfilter.MangleChain, "-i", ctx.Output.Interface, "-m", "set", "--match-set", setName, "dst", "-j", "MARK", "--set-mark", mark)))
 	for _, rule := range ctx.Config.Rules {
 		if rule.Via != name {
@@ -222,4 +221,11 @@ func normalizeDomain(domain string) string {
 
 func ensureIPRule(ctx ApplyContext, match, table, priority string) runner.Result {
 	return runShell(ctx, "ip rule "+table, "ip rule show | grep -q "+netfilter.ShellQuote(match+".*lookup "+table)+" || ip rule add "+match+" table "+netfilter.ShellQuote(table)+" priority "+netfilter.ShellQuote(priority))
+}
+
+func fallbackForService(explicit, candidate string) string {
+	if strings.TrimSpace(explicit) != "" {
+		return ""
+	}
+	return candidate
 }

@@ -50,15 +50,16 @@ func (DirectUpstream) ApplyRoutes(name string, up config.Upstream, ctx ApplyCont
 	tableID := strconv.Itoa(routeTableID(name))
 	mark := fwmark(name)
 	res := []runner.Result{
-		ctx.Runner.RunSoft("Route default "+name, 10*time.Second, nil, "ip", "route", "replace", "default", "via", gateway, "dev", iface, "table", tableID),
+		ctx.Runner.Run("Protect route table "+name, 10*time.Second, nil, "ip", "route", "replace", "unreachable", "default", "metric", "32760", "table", tableID),
+		ctx.Runner.Run("Route default "+name, 10*time.Second, nil, "ip", "route", "replace", "default", "via", gateway, "dev", iface, "table", tableID),
 	}
 	if ctx.ClientCIDR != "" && ctx.Output.Interface != "" {
-		res = append(res, ctx.Runner.RunSoft("Route return "+name, 10*time.Second, nil, "ip", "route", "replace", ctx.ClientCIDR, "dev", ctx.Output.Interface, "table", tableID))
+		res = append(res, ctx.Runner.Run("Route return "+name, 10*time.Second, nil, "ip", "route", "replace", ctx.ClientCIDR, "dev", ctx.Output.Interface, "table", tableID))
 	}
-	res = append(res, ensureIPRule(ctx, "fwmark "+mark, tableID, strconv.Itoa(10000+routeTableID(name)%20000)))
+	res = append(res, ensureIPRule(ctx, "fwmark "+mark+"/0xffff", tableID, strconv.Itoa(10000+routeTableID(name)%20000)))
 	for _, rule := range ctx.Config.Rules {
 		if rule.Via == name && rule.Default && ctx.ClientCIDR != "" {
-			res = append(res, ensureIPRule(ctx, "from "+ctx.ClientCIDR, tableID, "30000"))
+			res = append(res, ensureIPRule(ctx, "from "+ctx.ClientCIDR, tableID, "31000"))
 		}
 	}
 	return res

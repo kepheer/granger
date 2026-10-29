@@ -551,7 +551,7 @@ func (a apiServer) handleOutputs(w http.ResponseWriter, r *http.Request) {
 		if cfg.Outputs == nil {
 			cfg.Outputs = map[string]config.Output{}
 		}
-		if err := provision.EnsureOutput(name, &out); err != nil {
+		if err := provision.EnsureOutput(name, &out, cfg.Server.PublicIP); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
