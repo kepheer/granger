@@ -7,9 +7,11 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"gopkg.in/yaml.v3"
+	"granger/pkg/netfilter"
 )
 
 const (
@@ -31,10 +33,14 @@ type Config struct {
 }
 
 type User struct {
-	DisplayName string `json:"display_name,omitempty" yaml:"display_name,omitempty"`
-	Disabled    bool   `json:"disabled,omitempty" yaml:"disabled,omitempty"`
-	Output      string `json:"output,omitempty" yaml:"output,omitempty"`
-	Client      string `json:"client,omitempty" yaml:"client,omitempty"`
+	Admin            bool     `json:"admin,omitempty" yaml:"admin,omitempty"`
+	AccessRestricted bool     `json:"access_restricted,omitempty" yaml:"access_restricted,omitempty"`
+	AllowedUpstreams []string `json:"allowed_upstreams,omitempty" yaml:"allowed_upstreams,omitempty"`
+	DefaultUpstream  string   `json:"default_upstream,omitempty" yaml:"default_upstream,omitempty"`
+	DisplayName      string   `json:"display_name,omitempty" yaml:"display_name,omitempty"`
+	Disabled         bool     `json:"disabled,omitempty" yaml:"disabled,omitempty"`
+	Output           string   `json:"output,omitempty" yaml:"output,omitempty"`
+	Client           string   `json:"client,omitempty" yaml:"client,omitempty"`
 }
 
 type Server struct {
@@ -47,15 +53,17 @@ type Server struct {
 }
 
 type Output struct {
-	Type       string   `json:"type" yaml:"type"`
-	Interface  string   `json:"interface" yaml:"interface"`
-	Enabled    *bool    `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-	Config     string   `json:"config,omitempty" yaml:"config,omitempty"`
-	Service    string   `json:"service,omitempty" yaml:"service,omitempty"`
-	Subnet     string   `json:"subnet" yaml:"subnet"`
-	ServerIP   string   `json:"server_ip" yaml:"server_ip"`
-	ListenPort int      `json:"listen_port" yaml:"listen_port"`
-	Clients    []Client `json:"clients" yaml:"clients"`
+	Managed         bool              `json:"managed,omitempty" yaml:"managed,omitempty"`
+	ProtocolOptions map[string]string `json:"protocol_options,omitempty" yaml:"protocol_options,omitempty"`
+	Type            string            `json:"type" yaml:"type"`
+	Interface       string            `json:"interface" yaml:"interface"`
+	Enabled         *bool             `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	Config          string            `json:"config,omitempty" yaml:"config,omitempty"`
+	Service         string            `json:"service,omitempty" yaml:"service,omitempty"`
+	Subnet          string            `json:"subnet" yaml:"subnet"`
+	ServerIP        string            `json:"server_ip" yaml:"server_ip"`
+	ListenPort      int               `json:"listen_port" yaml:"listen_port"`
+	Clients         []Client          `json:"clients" yaml:"clients"`
 }
 
 type Client struct {
@@ -187,13 +195,35 @@ func SaveAtomic(path string, cfg Config) error {
 
 func (c Config) Validate() error {
 	interfaces := map[string]string{}
+	userMarks := map[int]string{}
 	services := map[string]string{}
+	routeTables := map[int]string{}
+	subnets := map[string]*net.IPNet{}
 	for name := range c.Users {
 		if name == "" {
 			return errors.New("user has empty name")
 		}
 	}
 	for name, user := range c.Users {
+		for _, upstream := range user.AllowedUpstreams {
+			if _, ok := c.Upstreams[upstream]; ok == false {
+				return errors.New("user " + name + " references missing allowed upstream " + upstream)
+			}
+		}
+		if user.DefaultUpstream != "" {
+			if _, ok := c.Upstreams[user.DefaultUpstream]; ok == false {
+				return errors.New("user " + name + " references missing default upstream")
+			}
+			allowedDefault := user.AccessRestricted == false
+			for _, upstream := range user.AllowedUpstreams {
+				if upstream == user.DefaultUpstream {
+					allowedDefault = true
+				}
+			}
+			if allowedDefault == false {
+				return errors.New("user " + name + " default upstream is not allowed")
+			}
+		}
 		if user.Output != "" {
 			if _, ok := c.Outputs[user.Output]; !ok {
 				return errors.New("user " + name + " references missing output " + user.Output)
@@ -214,15 +244,41 @@ func (c Config) Validate() error {
 			return err
 		}
 		if out.Subnet != "" {
-			if _, _, err := net.ParseCIDR(out.Subnet); err != nil {
+			_, subnet, err := net.ParseCIDR(out.Subnet)
+			if err != nil {
 				return err
+			}
+			if subnet.IP.To4() != nil {
+				for previous, existing := range subnets {
+					if subnet.Contains(existing.IP) || existing.Contains(subnet.IP) {
+						return errors.New("output " + name + " subnet overlaps output " + previous)
+					}
+				}
+				subnets[name] = subnet
+			}
+		}
+		if out.Managed && (out.Type == "xray" || out.Type == "sing-box") {
+			for _, client := range out.Clients {
+				mark := netfilter.UserMark(name, client.Name)
+				if previous, ok := userMarks[mark]; ok {
+					return errors.New("proxy routing identity collision: " + previous + " and " + client.Name)
+				}
+				userMarks[mark] = name + ":" + client.Name
 			}
 		}
 		if err := c.validateClients(name, out.Clients); err != nil {
 			return err
 		}
+		if err := validateRoutedOutput(name, out); err != nil {
+			return err
+		}
 	}
 	for name, up := range c.Upstreams {
+		table := netfilter.RouteTableID(name)
+		if previous, ok := routeTables[table]; ok {
+			return errors.New("upstream routing table collision: " + previous + " and " + name)
+		}
+		routeTables[table] = name
 		if up.Type == "" {
 			return errors.New("upstream " + name + " has empty type")
 		}
@@ -277,6 +333,80 @@ func (c Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+var managedQuickInterface = regexp.MustCompile(`^[a-zA-Z0-9_=+.-]{1,15}$`)
+
+func validateRoutedOutput(name string, out Output) error {
+	if out.Type != "wireguard" && out.Type != "amneziawg" && out.Type != "openvpn" {
+		return nil
+	}
+	if out.Managed && (out.Type == "wireguard" || out.Type == "amneziawg") {
+		if managedQuickInterface.MatchString(out.Interface) == false || out.Interface == "." || out.Interface == ".." || out.Interface == "lo" || out.Interface == "auto" {
+			return errors.New("output " + name + " has invalid managed interface name")
+		}
+	}
+	var subnet *net.IPNet
+	if out.Subnet != "" {
+		_, parsed, err := net.ParseCIDR(out.Subnet)
+		if err != nil {
+			return err
+		}
+		subnet = parsed
+	}
+	serverIP := net.ParseIP(out.ServerIP)
+	if out.Managed {
+		if subnet == nil || subnet.IP.To4() == nil {
+			return errors.New("output " + name + " requires an IPv4 subnet")
+		}
+		if usableOutputIP(serverIP, subnet) == false {
+			return errors.New("output " + name + " requires a usable server IPv4 address inside its subnet")
+		}
+	}
+	seen := map[string]string{}
+	for _, client := range out.Clients {
+		if client.IP == "" && out.Managed == false {
+			continue
+		}
+		addressCIDR := client.IP
+		if out.Managed == false && net.ParseIP(addressCIDR).To4() != nil {
+			addressCIDR += "/32"
+		}
+		ip, identity, err := net.ParseCIDR(addressCIDR)
+		if err != nil {
+			return errors.New("output " + name + " client " + client.Name + " requires an IPv4 /32 address")
+		}
+		prefix, bits := identity.Mask.Size()
+		if ip.To4() == nil || bits != 32 || prefix != 32 {
+			return errors.New("output " + name + " client " + client.Name + " requires an IPv4 /32 address")
+		}
+		if usableOutputIP(ip, subnet) == false || ip.Equal(serverIP) {
+			return errors.New("output " + name + " client " + client.Name + " requires a usable address inside its subnet distinct from the server")
+		}
+		address := ip.String()
+		if previous, ok := seen[address]; ok {
+			return errors.New("output " + name + " clients " + previous + " and " + client.Name + " share an IPv4 address")
+		}
+		seen[address] = client.Name
+	}
+	return nil
+}
+
+func usableOutputIP(ip net.IP, subnet *net.IPNet) bool {
+	if ip == nil || ip.To4() == nil || ip.IsGlobalUnicast() == false || ip.IsLoopback() {
+		return false
+	}
+	if subnet == nil {
+		return true
+	}
+	if subnet.IP.To4() == nil || len(subnet.Mask) != net.IPv4len || subnet.Contains(ip) == false || ip.Equal(subnet.IP) {
+		return false
+	}
+	broadcast := append(net.IP(nil), subnet.IP.To4()...)
+	for index, mask := range subnet.Mask {
+		broadcast[index] |= ^mask
+	}
+	return ip.Equal(broadcast) == false
 }
 
 func (u Upstream) IsEnabled() bool {
@@ -368,4 +498,23 @@ func validateAuthFlow(upstreamName string, flow []AuthStep) error {
 		seen[key] = true
 	}
 	return nil
+}
+
+func (c Config) UserCanUseUpstream(id, upstream string) bool {
+	if id == "" {
+		return true
+	}
+	user, ok := c.Users[id]
+	if ok == false || user.Disabled {
+		return false
+	}
+	if user.AccessRestricted == false {
+		return true
+	}
+	for _, name := range user.AllowedUpstreams {
+		if name == upstream {
+			return true
+		}
+	}
+	return false
 }

@@ -1,6 +1,7 @@
 package netfilter
 
 import (
+	"hash/fnv"
 	"strconv"
 	"strings"
 )
@@ -8,20 +9,29 @@ import (
 const Backend = "iptables"
 
 const (
-	MangleChain = "GRANGER_PREROUTING"
-	FilterChain = "GRANGER_FORWARD"
-	NATChain    = "GRANGER_POSTROUTING"
+	UserForwardChain = "GRANGER_USER_FORWARD"
+	UserInputChain   = "GRANGER_USER_INPUT"
+	OutputChain      = "GRANGER_OUTPUT"
+	UserOutputChain  = "GRANGER_USER_OUTPUT"
+	MangleChain      = "GRANGER_PREROUTING"
+	FilterChain      = "GRANGER_FORWARD"
+	NATChain         = "GRANGER_POSTROUTING"
 )
 
 func ResetScript() string {
 	return strings.Join([]string{
 		ensureChain("mangle", MangleChain),
+		ensureChain("mangle", OutputChain),
 		ensureChain("", FilterChain),
+		ensureChain("", UserOutputChain),
 		ensureChain("nat", NATChain),
 		EnsureAppend("mangle", "PREROUTING", "-j", MangleChain),
+		EnsureAppend("mangle", "OUTPUT", "-j", OutputChain),
 		EnsureAppend("", "FORWARD", "-j", FilterChain),
+		AccessHooks(),
 		EnsureAppend("nat", "POSTROUTING", "-j", NATChain),
 		ShellJoin(append(iptablesPrefix("mangle"), "-F", MangleChain)...),
+		ShellJoin(append(iptablesPrefix("mangle"), "-F", OutputChain)...),
 		ShellJoin(append(iptablesPrefix(""), "-F", FilterChain)...),
 		ShellJoin(append(iptablesPrefix("nat"), "-F", NATChain)...),
 	}, "\n")
@@ -64,4 +74,41 @@ func iptablesPrefix(table string) []string {
 
 func ensureChain(table, chain string) string {
 	return ShellJoin(append(iptablesPrefix(table), "-N", chain)...) + " 2>/dev/null || true"
+}
+
+func ProxyMark(name string) int {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(name))
+	return 0x1000000 + int(hash.Sum32()&0xffffff)
+}
+
+func UserMark(output, user string) int {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(output + ":" + user))
+	return int(0x40000000 | ((hash.Sum32()%16383)+1)<<16)
+}
+
+func EnsureFirst(table, chain, target string) string {
+	list := ShellJoin(append(iptablesPrefix(table), "-S", chain)...)
+	expected := "-A " + chain + " -j " + target
+	insert := append(iptablesPrefix(table), "-I", chain, "1", "-j", target)
+	return "[ \"$(" + list + " | sed -n '2p')\" = " + ShellQuote(expected) + " ] || " + ShellJoin(insert...)
+}
+
+func AccessHooks() string {
+	return strings.Join([]string{ensureChain("", UserForwardChain), ensureChain("", UserOutputChain), ensureChain("", UserInputChain), EnsureFirst("", "FORWARD", UserForwardChain), EnsureFirst("", "OUTPUT", UserOutputChain), EnsureFirst("", "INPUT", UserInputChain), IPv6ProxyGuard()}, "\n")
+}
+
+func IPv6ProxyGuard() string {
+	create := ShellJoin("ip6tables", "-N", UserOutputChain) + " 2>/dev/null || true"
+	check := ShellJoin("ip6tables", "-C", UserOutputChain, "-m", "mark", "--mark", "0x40000000/0x40000000", "-j", "REJECT")
+	add := ShellJoin("ip6tables", "-A", UserOutputChain, "-m", "mark", "--mark", "0x40000000/0x40000000", "-j", "REJECT")
+	first := strings.ReplaceAll(EnsureFirst("", "OUTPUT", UserOutputChain), "'iptables'", "'ip6tables'")
+	return "if [ -r /proc/net/if_inet6 ] && [ -n \"$(head -n 1 /proc/net/if_inet6)\" ]; then\n" + create + "\n" + check + " 2>/dev/null || " + add + "\n" + first + "\nfi"
+}
+
+func RouteTableID(name string) int {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(name))
+	return 10000 + int(hash.Sum32()%20000)
 }
