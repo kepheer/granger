@@ -38,7 +38,7 @@
 	--accent-foreground: oklch(0.985 0 0);
 	--destructive: oklch(0.577 0.245 27.325);
 	--border: oklch(1 0 0 / 10%);
-	--input: oklch(1 0 0 / 45%);
+	--input: oklch(1 0 0 / 20%);
 	--ring: oklch(0.82 0 0);
 	--chart-1: oklch(0.87 0 0);
 	--chart-2: oklch(0.556 0 0);
@@ -62,14 +62,6 @@ body {
 	min-height: 100vh;
 	margin: 0;
 	background: #08090b;
-}
-
-body,
-button,
-input,
-textarea,
-select {
-	font: inherit;
 }
 
 a {
@@ -98,7 +90,7 @@ a {
 	--accent-foreground: oklch(0.985 0 0);
 	--destructive: oklch(0.704 0.191 22.216);
 	--border: oklch(1 0 0 / 10%);
-	--input: oklch(1 0 0 / 45%);
+	--input: oklch(1 0 0 / 20%);
 	--ring: oklch(0.82 0 0);
 	--chart-1: oklch(0.87 0 0);
 	--chart-2: oklch(0.556 0 0);
@@ -159,6 +151,19 @@ a {
 }
 
 @layer base {
+	body,
+	button,
+	input,
+	textarea,
+	select {
+		font: inherit;
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 3px;
+	}
+
 	* {
 		@apply border-border outline-ring/50;
 	}
@@ -172,11 +177,6 @@ a {
 
 .font-display {
 	font-family: 'Unbounded Variable', 'Onest Variable', sans-serif;
-}
-
-:focus-visible {
-	outline: 2px solid var(--ring);
-	outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {

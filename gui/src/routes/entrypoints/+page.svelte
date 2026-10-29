@@ -2,6 +2,9 @@
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Label } from '$lib/components/ui/label';
+	import UpstreamSelect from '$lib/components/upstream-select.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import QRCode from 'qrcode';
@@ -351,15 +354,29 @@
 
 	{#if message}<p class="text-sm text-red-300" role="alert">{message}</p>{/if}
 	<div class="space-y-4">
-		{#if loaded === false}<p role="status" class="text-sm text-muted-foreground">Loading entrypoints…</p>{/if}
-		{#if loaded && entrypoints.length === 0 && message === ''}<p class="rounded-lg border border-border p-6 text-sm text-muted-foreground">No entrypoints configured. Add your first entrypoint to issue client profiles.</p>{/if}
+		{#if loaded === false}<p
+				role="status"
+				class="text-sm text-muted-foreground"
+			>
+				Loading entrypoints…
+			</p>{/if}
+		{#if loaded && entrypoints.length === 0 && message === ''}<p
+				class="rounded-lg border border-border p-6 text-sm text-muted-foreground"
+			>
+				No entrypoints configured. Add your first entrypoint to issue client
+				profiles.
+			</p>{/if}
 		{#each entrypoints as entrypoint}
 			<Card.Root class="rounded-lg">
-				<Card.Header class="flex flex-row flex-wrap items-start justify-between gap-4">
+				<Card.Header
+					class="flex flex-row flex-wrap items-start justify-between gap-4"
+				>
 					<div>
 						<Card.Title>{entrypoint.name}</Card.Title>
 						<Card.Description
-							>{[entrypoint.type, entrypoint.iface, entrypoint.subnet].filter((value) => value !== '').join(' · ')}</Card.Description
+							>{[entrypoint.type, entrypoint.iface, entrypoint.subnet]
+								.filter((value) => value !== '')
+								.join(' · ')}</Card.Description
 						>
 					</div>
 					<div
@@ -390,29 +407,28 @@
 					>
 						<legend class="mb-2">Allowed upstreams for the new user</legend>
 						{#each upstreamNames as upstream}
-							<label class="flex items-center gap-2"
-								><input
-									type="checkbox"
+							<div class="flex items-center gap-2">
+								<Checkbox
+									id={`create-${entrypoint.name}-${upstream}`}
 									checked={createAllowed(entrypoint.name).includes(upstream)}
-									onchange={(event) =>
-										changeCreateAllowed(
-											entrypoint.name,
-											upstream,
-											event.currentTarget.checked
-										)}
-								/>{upstream}</label
-							>
+									disabled={busy !== ''}
+									onCheckedChange={(checked) =>
+										changeCreateAllowed(entrypoint.name, upstream, checked)}
+								/>
+								<Label for={`create-${entrypoint.name}-${upstream}`}
+									>{upstream}</Label
+								>
+							</div>
 						{/each}
-						<label
-							>Default route <select
-								class="ml-2 rounded border border-border bg-background p-1"
+						<div class="grid w-full gap-2 sm:max-w-xs">
+							<Label for={`default-${entrypoint.name}`}>Default route</Label>
+							<UpstreamSelect
+								id={`default-${entrypoint.name}`}
+								options={createAllowed(entrypoint.name)}
 								bind:value={defaultByOutput[entrypoint.name]}
-								><option value="">Shared routing rules</option
-								>{#each createAllowed(entrypoint.name) as upstream}<option
-										value={upstream}>{upstream}</option
-									>{/each}</select
-							></label
-						>
+								disabled={busy !== ''}
+							/>
+						</div>
 					</fieldset>
 					<div
 						role="table"
@@ -487,13 +503,18 @@
 											: 'outline'}
 										onclick={() =>
 											toggleProfile(client.user, client.status === 'enabled')}
-										><PowerIcon />{profileBusy === client.user ? 'Applying…' : client.status === 'enabled'
-											? copy.disable
-											: copy.enable}</Button
+										><PowerIcon />{profileBusy === client.user
+											? 'Applying…'
+											: client.status === 'enabled'
+												? copy.disable
+												: copy.enable}</Button
 									>
 								</div>
 							</div>
-						{:else}<p class="p-4 text-sm text-muted-foreground">No profiles issued yet. Create a user above to generate a connection config.</p>
+						{:else}<p class="p-4 text-sm text-muted-foreground">
+								No profiles issued yet. Create a user above to generate a
+								connection config.
+							</p>
 						{/each}
 					</div>
 				</Card.Content>
@@ -531,27 +552,27 @@
 			<fieldset disabled={accessSaving} class="mt-6 space-y-3">
 				<legend class="mb-3">Allowed upstreams</legend>
 				{#each upstreamNames as upstream}
-					<label class="flex items-center gap-2"
-						><input
-							type="checkbox"
+					<div class="flex items-center gap-2">
+						<Checkbox
+							id={`access-${upstream}`}
 							checked={accessAllowed.includes(upstream)}
-							onchange={(event) =>
-								changeAccessAllowed(upstream, event.currentTarget.checked)}
-						/>{upstream}</label
-					>
+							disabled={accessSaving}
+							onCheckedChange={(checked) =>
+								changeAccessAllowed(upstream, checked)}
+						/>
+						<Label for={`access-${upstream}`}>{upstream}</Label>
+					</div>
 				{/each}
 			</fieldset>
-			<label class="mt-6 block text-sm"
-				>Default route<select
-					class="mt-2 w-full rounded border border-border bg-background p-2"
-					disabled={accessSaving}
+			<div class="mt-6 grid gap-2">
+				<Label for="access-default">Default route</Label>
+				<UpstreamSelect
+					id="access-default"
+					options={accessAllowed}
 					bind:value={accessDefault}
-					><option value="">Shared routing rules</option
-					>{#each accessAllowed as upstream}<option value={upstream}
-							>{upstream}</option
-						>{/each}</select
-				></label
-			>
+					disabled={accessSaving}
+				/>
+			</div>
 			{#if message}<p class="mt-4 text-sm text-red-300" role="alert">
 					{message}
 				</p>{/if}
