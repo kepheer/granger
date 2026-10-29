@@ -11,12 +11,22 @@
 		installable: boolean;
 		state: string;
 		summary: string;
+		commands?: CommandResult[];
 	};
 
 	type ApiResponse<T> = {
 		ok: boolean;
 		error?: string;
 		data?: T;
+		results?: CommandResult[];
+	};
+
+	type CommandResult = {
+		title: string;
+		command: string;
+		output: string;
+		ok: boolean;
+		status: string;
 	};
 
 	const copy = {
@@ -40,7 +50,8 @@
 		install: 'Install',
 		manual: 'Manual source required',
 		unavailable: 'Installer unavailable in dev mode',
-		refresh: 'Refresh'
+		refresh: 'Refresh',
+		installLog: 'Installation log'
 	} as const;
 
 	let protocols = $state<ProtocolStatus[]>([
@@ -96,6 +107,7 @@
 
 	let protocolMessage = $state('');
 	let installing = $state('');
+	let protocolResults = $state<CommandResult[]>([]);
 
 	onMount(() => {
 		void loadProtocols();
@@ -138,6 +150,7 @@
 	async function installProtocol(name: string) {
 		installing = name;
 		protocolMessage = '';
+		protocolResults = [];
 		try {
 			const response = await fetch('/api/protocols/install', {
 				method: 'POST',
@@ -148,6 +161,7 @@
 			if (body.data) {
 				protocols = protocols.map((item) => (item.name === name ? body.data! : item));
 			}
+			protocolResults = body.results ?? body.data?.commands ?? [];
 			protocolMessage = body.error ?? body.data?.summary ?? '';
 		} catch {
 			protocolMessage = copy.unavailable;
@@ -206,6 +220,27 @@
 			{#if protocolMessage}
 				<div class="rounded-md border border-border bg-white/[0.03] px-3 py-2 text-sm text-muted-foreground">
 					{protocolMessage}
+				</div>
+			{/if}
+			{#if protocolResults.length}
+				<div class="rounded-lg border border-border bg-black/25">
+					<div class="border-b border-border px-4 py-3 text-sm font-medium text-white">
+						{copy.installLog}
+					</div>
+					<div class="divide-y divide-border">
+						{#each protocolResults as result}
+							<div class="space-y-2 p-4">
+								<div class="flex items-center justify-between gap-3">
+									<div class="text-sm font-medium text-white">{result.title}</div>
+									<span class={result.ok ? 'text-xs text-emerald-300' : 'text-xs text-red-300'}>
+										{result.status}
+									</span>
+								</div>
+								<pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-black/35 p-3 text-xs text-white/75">$ {result.command}
+{result.output}</pre>
+							</div>
+						{/each}
+					</div>
 				</div>
 			{/if}
 			<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">

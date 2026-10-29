@@ -74,6 +74,11 @@ func (m Manager) Install(name string) (Status, []runner.Result, error) {
 	results := installer.Install(m.Runner)
 	after := installer.Check(m.Runner)
 	after.Commands = results
+	if result, ok := firstFailed(results); ok {
+		after.Installed = false
+		after.State = "failed"
+		after.Summary = result.Title + ": " + strings.TrimSpace(result.Output)
+	}
 	return after, results, nil
 }
 
@@ -86,6 +91,15 @@ func (m Manager) Uninstall(name string) (Status, []runner.Result, error) {
 	after := installer.Check(m.Runner)
 	after.Commands = results
 	return after, results, nil
+}
+
+func firstFailed(results []runner.Result) (runner.Result, bool) {
+	for _, result := range results {
+		if !result.OK {
+			return result, true
+		}
+	}
+	return runner.Result{}, false
 }
 
 func Supported() []Installer {
