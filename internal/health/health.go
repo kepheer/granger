@@ -1,7 +1,11 @@
 package health
 
 import (
+	"granger/internal/driver"
+	"granger/internal/engine"
 	"strconv"
+	"strings"
+	"time"
 
 	"granger/internal/config"
 	"granger/pkg/runner"
@@ -58,6 +62,31 @@ func (c Checker) Check(cfg config.Config) RuntimeStatus {
 			Fix:      "",
 		})
 	}
+	for _, status := range engine.New(c.Runner).Runtime(cfg) {
+		if out, ok := cfg.Outputs[status.Name]; ok && out.IsEnabled() == false {
+			continue
+		}
+		state := Degraded
+		if status.State == driver.StateHealthy {
+			state = Healthy
+		}
+		if status.State == driver.StateBroken {
+			state = Broken
+		}
+		checks = append(checks, Check{Name: status.Type + ":" + status.Name, State: state, Summary: status.Summary, Expected: "enabled tunnel is operational"})
+	}
+	dns := c.Runner.Run("DNS service", 5*time.Second, nil, "systemctl", "is-active", "dnsmasq.service")
+	dnsState := Broken
+	if dns.OK {
+		dnsState = Healthy
+	}
+	checks = append(checks, Check{Name: "dnsmasq", State: dnsState, Summary: dns.Output, Expected: "active DNS service"})
+	forwarding := c.Runner.Run("IPv4 forwarding", 5*time.Second, nil, "sysctl", "-n", "net.ipv4.ip_forward")
+	forwardState := Broken
+	if forwarding.OK && (strings.TrimSpace(forwarding.Output) == "1" || c.Runner.DryRun) {
+		forwardState = Healthy
+	}
+	checks = append(checks, Check{Name: "ip_forward", State: forwardState, Summary: forwarding.Output, Expected: "IPv4 forwarding is enabled"})
 	overall := Healthy
 	for _, ch := range checks {
 		if ch.State == Broken {

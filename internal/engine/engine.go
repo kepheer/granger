@@ -37,11 +37,20 @@ func NewWithRegistry(r runner.Runner, reg *driver.Registry) Engine {
 }
 
 func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
+	cfg = e.effectiveConfig(cfg)
 	ctx := driver.BaseContext(cfg, e.Runner)
 	var res []runner.Result
-	res = append(res, e.Runner.RunSoft("Enable IPv4 forwarding", 10*time.Second, nil, "sysctl", "-w", "net.ipv4.ip_forward=1"))
-	res = append(res, e.Runner.RunSoft("Reset Granger firewall chains", 10*time.Second, nil, "sh", "-c", netfilter.ResetScript()))
+	res = append(res, e.beginRoutingUpdate(cfg)...)
+	if resultsOK(res) == false {
+		return ApplyPlan{Results: res, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
+	}
+	res = append(res, e.Runner.Run("Reset Granger firewall chains", 10*time.Second, nil, "sh", "-c", netfilter.ResetScript()))
 	res = append(res, e.resetManagedRouteTables(cfg)...)
+	res = append(res, e.applyUserAccess(cfg)...)
+	if resultsOK(res) == false {
+		return ApplyPlan{Results: res, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
+	}
+	res = append(res, e.Runner.Run("Enable IPv4 forwarding", 10*time.Second, nil, "sysctl", "-w", "net.ipv4.ip_forward=1"))
 	outputNames := sortedOutputNames(cfg)
 	upstreamNames := sortedUpstreamNames(cfg)
 	for _, name := range outputNames {
@@ -86,6 +95,7 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 			res = append(res, d.ApplyFirewall(name, up, outCtx)...)
 		}
 	}
+	res = append(res, e.applyPersonalFallback(cfg)...)
 	for _, name := range upstreamNames {
 		up := cfg.Upstreams[name]
 		if !up.IsEnabled() {
@@ -108,8 +118,12 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 			res = append(res, d.ApplyRoutes(name, up, outCtx)...)
 		}
 	}
-	dnsRules := e.DNSRules(e.effectiveConfig(cfg), ctx)
+	res = append(res, e.applyUserDefaultRoutes(cfg)...)
+	dnsRules := e.DNSRules(cfg, ctx)
 	res = append(res, dns.New(e.Runner).Apply(cfg, dnsRules)...)
+	if resultsOK(res) {
+		res = append(res, e.finishRoutingUpdate())
+	}
 	return ApplyPlan{DNSRules: dnsRules, Results: res, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
 }
 
@@ -120,14 +134,19 @@ func (e Engine) resetManagedRouteTables(cfg config.Config) []runner.Result {
 		current = append(current, strconv.Itoa(driver.RouteTableID(name)))
 	}
 	var results []runner.Result
+	results = append(results, e.Runner.Run("Reset closed personal defaults", 10*time.Second, nil, "sh", "-c", "while ip rule del table "+routingGuardTable+" priority 30000 2>/dev/null; do :; done"))
 	for _, table := range previous {
 		script := "while ip rule del table " + netfilter.ShellQuote(table) + " 2>/dev/null; do :; done\n" +
 			"ip route flush table " + netfilter.ShellQuote(table) + " 2>/dev/null || true"
 		results = append(results, e.Runner.RunSoft("Reset route table "+table, 10*time.Second, nil, "sh", "-c", script))
 	}
+	for _, table := range current {
+		results = append(results, e.Runner.Run("Protect managed route table "+table, 10*time.Second, nil, "ip", "route", "replace", "unreachable", "default", "metric", "32760", "table", table))
+	}
 	if !e.Runner.DryRun {
-		_ = os.MkdirAll(config.RuntimeDir, 0755)
-		_ = os.WriteFile(filepath.Join(config.RuntimeDir, "route-tables"), []byte(strings.Join(current, "\n")+"\n"), 0644)
+		if err := writeManagedRouteTables(current); err != nil {
+			results = append(results, fail("Persist managed route tables", err))
+		}
 	}
 	return results
 }
@@ -148,26 +167,64 @@ func readManagedRouteTables() []string {
 
 func (e Engine) effectiveConfig(cfg config.Config) config.Config {
 	ctx := driver.BaseContext(cfg, e.Runner)
-	rules := make([]config.Rule, len(cfg.Rules))
-	copy(rules, cfg.Rules)
-	for index, rule := range rules {
-		up, ok := cfg.Upstreams[rule.Via]
-		fallback := rule.DomainFallbackVia
-		if fallback == "" {
-			fallback = up.FallbackWhenDown
-		}
-		if !ok || up.BlockFallback || fallback == "" {
+	available := map[string]bool{}
+	for name, up := range cfg.Upstreams {
+		if up.IsEnabled() == false {
 			continue
 		}
-		available := up.IsEnabled()
-		if available {
-			d, err := e.Registry.Upstream(up.Type)
-			available = err == nil && d.Status(rule.Via, up, ctx).State == driver.StateHealthy
-		}
-		if !available {
-			rules[index].Via = fallback
+		d, err := e.Registry.Upstream(up.Type)
+		if err == nil {
+			available[name] = d.Status(name, up, ctx).State == driver.StateHealthy
 		}
 	}
+
+	resolve := func(name, fallback string) string {
+		seen := map[string]bool{}
+		current := name
+		for {
+			up, ok := cfg.Upstreams[current]
+			if ok == false || seen[current] {
+				return name
+			}
+			seen[current] = true
+			if available[current] || up.BlockFallback {
+				return current
+			}
+			next := up.FallbackWhenDown
+			if current == name && fallback != "" {
+				next = fallback
+			}
+			if next == "" || next == "pending" {
+				return current
+			}
+			current = next
+		}
+	}
+
+	var rules []config.Rule
+	for _, rule := range cfg.Rules {
+		if len(rule.Domains) > 0 {
+			domain := rule
+			domain.CIDRs = nil
+			domain.Default = false
+			domain.Via = resolve(rule.Via, rule.DomainFallbackVia)
+			rules = append(rules, domain)
+		}
+		if len(rule.CIDRs) > 0 || rule.Default {
+			route := rule
+			route.Domains = nil
+			route.Via = resolve(rule.Via, rule.CIDRFallback)
+			rules = append(rules, route)
+		}
+	}
+	users := make(map[string]config.User, len(cfg.Users))
+	for id, user := range cfg.Users {
+		if user.DefaultUpstream != "" {
+			user.DefaultUpstream = resolve(user.DefaultUpstream, "")
+		}
+		users[id] = user
+	}
+	cfg.Users = users
 	cfg.Rules = rules
 	return cfg
 }
@@ -321,4 +378,23 @@ func sortedUpstreamNames(cfg config.Config) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func writeManagedRouteTables(tables []string) error {
+	if err := os.MkdirAll(config.RuntimeDir, 0755); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(config.RuntimeDir, ".route-tables-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if _, err := file.WriteString(strings.Join(tables, "\n") + "\n"); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), filepath.Join(config.RuntimeDir, "route-tables"))
 }

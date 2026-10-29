@@ -3,6 +3,7 @@ package dns
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,11 +20,19 @@ func New(r runner.Runner) Renderer { return Renderer{Runner: r} }
 
 func (r Renderer) Apply(cfg config.Config, rules []driver.DNSRule) []runner.Result {
 	body := r.Render(cfg, rules)
+	previous, _ := os.ReadFile(config.DNSMasqPath)
+	changed := string(previous) != body
 	var res []runner.Result
 	res = append(res, r.writeConfig(config.DNSMasqPath, body))
 	res = append(res, r.Runner.Run("Validate dnsmasq config", 10*time.Second, nil, "dnsmasq", "--test", "--conf-file=/etc/dnsmasq.conf"))
 	if res[len(res)-1].OK {
-		res = append(res, r.Runner.Run("Restart dnsmasq", 30*time.Second, nil, "systemctl", "restart", "dnsmasq.service"))
+		if changed {
+			res = append(res, r.Runner.Run("Reset dnsmasq start limit", 10*time.Second, nil, "systemctl", "reset-failed", "dnsmasq.service"))
+			res = append(res, r.Runner.Run("Restart dnsmasq", 30*time.Second, nil, "systemctl", "restart", "dnsmasq.service"))
+		}
+		if changed == false {
+			res = append(res, r.Runner.Run("Refresh dnsmasq cache", 30*time.Second, nil, "systemctl", "reload-or-restart", "dnsmasq.service"))
+		}
 	}
 	return res
 }
@@ -40,8 +49,31 @@ func (r Renderer) Render(cfg config.Config, rules []driver.DNSRule) string {
 	}
 	var b strings.Builder
 	b.WriteString("interface=" + cfg.Server.DNSInterface + "\n")
-	b.WriteString("bind-interfaces\n")
+	b.WriteString("bind-dynamic\n")
 	b.WriteString("listen-address=" + cfg.Server.DNSListen + "\n")
+	if cfg.Server.DNSInterface != "lo" {
+		b.WriteString("interface=lo\n")
+	}
+	if cfg.Server.DNSListen != "127.0.0.1" {
+		b.WriteString("listen-address=127.0.0.1\n")
+	}
+	names := make([]string, 0, len(cfg.Outputs))
+	for name := range cfg.Outputs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		out := cfg.Outputs[name]
+		if out.IsEnabled() == false || out.Interface == "" || out.ServerIP == "" {
+			continue
+		}
+		if out.Interface != cfg.Server.DNSInterface {
+			b.WriteString("interface=" + out.Interface + "\n")
+		}
+		if out.ServerIP != cfg.Server.DNSListen {
+			b.WriteString("listen-address=" + out.ServerIP + "\n")
+		}
+	}
 	b.WriteString("port=53\nno-resolv\n")
 	for _, upstream := range cfg.Server.DNSUpstreams {
 		b.WriteString("server=" + upstream + "\n")
