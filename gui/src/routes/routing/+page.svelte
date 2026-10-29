@@ -6,6 +6,7 @@
 		Controls,
 		MiniMap,
 		SvelteFlow,
+		type Connection,
 		type Edge,
 		type Node
 	} from '@xyflow/svelte';
@@ -25,16 +26,28 @@
 	};
 
 	type GraphPayload = {
-		nodes: Array<{ id: string; type: string; label: string; position?: { x: number; y: number }; data?: unknown }>;
-		edges: Array<{ id: string; source: string; target: string; label?: string }>;
+		version: string;
+		nodes: Array<{
+			id: string;
+			type: string;
+			label: string;
+			position?: { x: number; y: number };
+			data?: unknown;
+		}>;
+		edges: Array<{
+			id: string;
+			source: string;
+			target: string;
+			label?: string;
+		}>;
 		config: GraphConfig;
 	};
 
 	const copy = {
 		title: 'Routing',
 		description:
-			'Build routing as a graph: entrypoints feed rules, rules choose upstreams, and fallback/DNS nodes explain what happens when a tunnel is down.',
-		addNode: 'Add node',
+			'Entry points connect to issued users. Shared rules and personal default routes choose outgoing connections. Select a node in the graph or the list to edit it.',
+		addNode: 'Add route rule',
 		save: 'Save graph',
 		dryRun: 'Dry run',
 		selected: 'Selected node',
@@ -46,10 +59,10 @@
 		dns: 'DNS resolvers',
 		via: 'Via / target',
 		fallback: 'Fallback upstream',
-		defaultUpstream: 'Default upstream',
+		defaultUpstream: 'Default route',
 		blockFallback: 'Block traffic when fallback is unavailable',
 		statusReady: 'Graph ready',
-		statusSaved: 'Graph saved',
+		statusSaved: 'Graph saved and applied',
 		statusDryRun: 'Dry-run finished',
 		statusError: 'Graph action failed'
 	} as const;
@@ -57,7 +70,11 @@
 	let nodes = $state<Node[]>([]);
 	let edges = $state<Edge[]>([]);
 	let selectedId = $state('');
-	let status = $state('');
+	let status = $state('Loading routing…');
+	let graphVersion = $state('');
+	let graphLoaded = $state(false);
+	let actionPending = $state(false);
+	let newRuleName = $state('');
 	let graphConfig = $state<GraphConfig>({
 		users: {},
 		outputs: {},
@@ -65,74 +82,86 @@
 		rules: []
 	});
 
-	const nodeTypes = [
-		{ type: 'entrypoint', label: 'Entrypoint' },
-		{ type: 'user', label: 'User group' },
-		{ type: 'rule', label: 'Rule / bypass' },
-		{ type: 'upstream', label: 'Upstream' },
-		{ type: 'fallback', label: 'Fallback' },
-		{ type: 'dns', label: 'DNS resolver' }
-	];
-
-	const fallbackGraph: GraphPayload = {
-		config: {
-			users: {},
-			outputs: {},
-			upstreams: {
-				default_awg: { type: 'amneziawg', interface: 'awg0', enabled: true },
-				direct: { type: 'direct', interface: 'auto', enabled: true }
-			},
-			rules: [{ name: 'default', default: true, via: 'default_awg' }]
-		},
-		nodes: [
-			{ id: 'output:home_wg', type: 'entrypoint', label: 'home_wg', position: { x: 40, y: 120 } },
-			{ id: 'rule:default', type: 'rule', label: 'default', position: { x: 360, y: 120 } },
-			{ id: 'upstream:default_awg', type: 'upstream', label: 'default_awg', position: { x: 700, y: 80 } },
-			{ id: 'upstream:direct', type: 'fallback', label: 'direct fallback', position: { x: 700, y: 240 } }
-		],
-		edges: [
-			{ id: 'output:home_wg->rule:default', source: 'output:home_wg', target: 'rule:default', label: 'traffic' },
-			{ id: 'rule:default->upstream:default_awg', source: 'rule:default', target: 'upstream:default_awg', label: 'via' }
-		]
-	};
-
 	let selectedNode = $derived(nodes.find((node) => node.id === selectedId));
 
 	onMount(async () => {
 		try {
 			const response = await fetch('/api/routing/graph');
-			if (!response.ok) throw new Error(await response.text());
 			const body = await response.json();
-			loadGraph(body.data ?? fallbackGraph);
-		} catch {
-			loadGraph(fallbackGraph);
+
+			if (
+				response.ok === false ||
+				body.ok !== true ||
+				body.data?.config === undefined ||
+				body.data?.config === null ||
+				typeof body.data?.config?.server !== 'object' ||
+				body.data?.config?.server === null
+			) {
+				throw new Error(body.error ?? 'Could not load routing configuration');
+			}
+
+			loadGraph(body.data);
+			graphLoaded = true;
+			status = copy.statusReady;
+		} catch (error) {
+			graphLoaded = false;
+			status = `${copy.statusError}: ${error instanceof Error ? error.message : String(error)}`;
 		}
-		status = copy.statusReady;
 	});
 
 	function loadGraph(graph: GraphPayload) {
 		graphConfig = graph.config;
-		nodes =
-			graph.nodes.map((node) => ({
-				id: node.id,
-				type: 'default',
-				position: node.position ?? { x: 0, y: 0 },
-				data: {
-					label: node.label,
-					kind: node.type,
-					raw: node.data
-				},
-				style: nodeStyle(node.type),
-				class: nodeClass(node.type)
-			}));
-		edges =
-			graph.edges.map((edge) => ({
-				id: edge.id,
-				source: edge.source,
-				target: edge.target,
-				label: edge.label,
-				animated: edge.label === 'fallback'
-			}));
+		graphVersion = graph.version;
+		const kinds = ['entrypoint', 'user', 'rule', 'upstream', 'fallback', 'dns'];
+		const items = [...(graph.nodes ?? [])].sort((left, right) => {
+			const kindOrder = kinds.indexOf(left.type) - kinds.indexOf(right.type);
+			return kindOrder || left.label.localeCompare(right.label);
+		});
+		const positions = new Map<string, { x: number; y: number }>();
+		let offset = 0;
+
+		for (const kind of kinds) {
+			const group = items.filter((item) => item.type === kind);
+			group.forEach((item, index) => {
+				positions.set(item.id, { x: (index % 3) * 230, y: offset + Math.floor(index / 3) * 100 });
+			});
+			if (group.length > 0) {
+				offset += Math.ceil(group.length / 3) * 100 + 60;
+			}
+		}
+
+		nodes = items.map((node) => ({
+			id: node.id,
+			type: 'default',
+			position: positions.get(node.id) ?? { x: 0, y: offset },
+			data: { label: node.label, kind: node.type, raw: node.data },
+			style: nodeStyle(node.type),
+			class: nodeClass(node.type),
+			deletable: node.type === 'rule'
+		}));
+		const nodeIDs = new Set(nodes.map((node) => node.id));
+		const links = [...(graph.edges ?? [])];
+
+		for (const node of items.filter((item) => item.type === 'user')) {
+			const raw = (node.data ?? {}) as Record<string, unknown>;
+			const source = `output:${String(raw.output ?? '')}`;
+			if (nodeIDs.has(source)) {
+				links.push({ id: `profile:${node.id}`, source, target: node.id, label: 'profile' });
+			}
+			const target = `upstream:${String(raw.default_upstream ?? '')}`;
+			if (nodeIDs.has(target)) {
+				links.push({ id: `default:${node.id}`, source: node.id, target, label: 'default' });
+			}
+		}
+
+		edges = links.map((edge) => ({
+			id: edge.id,
+			source: edge.source,
+			target: edge.target,
+			label: edge.label,
+			animated: edge.label === 'fallback',
+			deletable: edge.source.startsWith('rule:')
+		}));
 	}
 
 	function nodeClass(type: string) {
@@ -151,20 +180,101 @@
 		return `background: #101114; color: white; border: 1px solid ${color}; border-radius: 8px; font-weight: 650; min-width: 150px; box-shadow: 0 12px 32px rgba(0,0,0,.28);`;
 	}
 
-	function addNode(type: string) {
-		const next = `${type}:${Date.now().toString(36)}`;
+	function addRule() {
+		if (graphLoaded === false || actionPending) {
+			return;
+		}
+
+		const name = newRuleName.trim();
+		if (/^[A-Za-z0-9_.-]+$/.test(name) === false) {
+			status =
+				'Enter a rule name using letters, numbers, dots, underscores or hyphens.';
+			return;
+		}
+
+		const next = `rule:${name}`;
+		if (nodes.some((node) => node.id === next)) {
+			status = 'A rule with this name already exists.';
+			return;
+		}
+
 		nodes = [
 			...nodes,
 			{
 				id: next,
 				type: 'default',
 				position: { x: 120 + nodes.length * 36, y: 120 + nodes.length * 28 },
-				data: { label: type, kind: type, raw: {} },
-				style: nodeStyle(type),
-				class: nodeClass(type)
+				data: {
+					label: name,
+					kind: 'rule',
+					raw: { name, via: '', domains: [], cidrs: [] }
+				},
+				style: nodeStyle('rule'),
+				class: nodeClass('rule')
 			}
 		];
 		selectedId = next;
+		newRuleName = '';
+		status =
+			'Rule added. Choose its upstream and destinations, then save the graph.';
+	}
+
+	function beforeConnect(connection: Connection) {
+		if (graphLoaded === false || actionPending) {
+			return false;
+		}
+
+		const source = nodes.find((node) => node.id === connection.source);
+		const target = nodes.find((node) => node.id === connection.target);
+		if (
+			source?.data?.kind !== 'rule' ||
+			target?.data?.kind !== 'upstream' ||
+			target.id.startsWith('upstream:') === false
+		) {
+			status =
+				'Connect a route rule to an upstream. Set fallback through the fallback field.';
+			return false;
+		}
+
+		return connection;
+	}
+
+	function connectRule(connection: Connection) {
+		if (beforeConnect(connection) === false) {
+			return;
+		}
+
+		const upstream = connection.target.slice('upstream:'.length);
+		edges = edges.filter(
+			(edge) => edge.source !== connection.source || edge.label === 'fallback'
+		);
+		edges = [
+			...edges,
+			{
+				id: `${connection.source}->${connection.target}`,
+				source: connection.source,
+				target: connection.target,
+				sourceHandle: connection.sourceHandle,
+				targetHandle: connection.targetHandle,
+				label: 'via'
+			}
+		];
+		nodes = nodes.map((node) => {
+			if (node.id !== connection.source) {
+				return node;
+			}
+
+			const raw =
+				node.data?.raw && typeof node.data.raw === 'object'
+					? { ...(node.data.raw as Record<string, unknown>) }
+					: {};
+			return {
+				...node,
+				data: { ...node.data, raw: { ...raw, via: upstream } }
+			};
+		});
+		selectedId = connection.source;
+		status = 'Route target updated. Save the graph to apply it.';
 	}
 
 	function selectNode(id: string) {
@@ -172,22 +282,56 @@
 	}
 
 	function updateSelectedLabel(value: string) {
+		if (selectedNode?.data?.kind !== 'user') {
+			return;
+		}
+
 		nodes = nodes.map((node) =>
-			node.id === selectedId ? { ...node, data: { ...node.data, label: value } } : node
+			node.id === selectedId
+				? { ...node, data: { ...node.data, label: value } }
+				: node
 		);
 	}
 
 	function selectedRawValue(key: string) {
 		const raw = selectedNode?.data?.raw;
-		if (!raw || typeof raw !== 'object') return '';
+		if (raw === null || raw === undefined || typeof raw !== 'object') {
+			return '';
+		}
 		const value = (raw as Record<string, unknown>)[key];
-		if (Array.isArray(value)) return value.join('\n');
-		return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+		if (Array.isArray(value)) {
+			return value.join('\n');
+		}
+		return typeof value === 'string' || typeof value === 'number'
+			? String(value)
+			: '';
 	}
 
 	function updateSelectedRaw(key: string, value: string, list = false) {
+		if (
+			selectedNode?.data?.kind === 'rule' &&
+			(key === 'via' || key === 'domain_fallback_via')
+		) {
+			const label = key === 'via' ? 'via' : 'fallback';
+			edges = edges.filter(
+				(edge) => edge.source !== selectedId || (edge.label ?? 'via') !== label
+			);
+			if (value.trim() !== '') {
+				edges = [
+					...edges,
+					{
+						id: `${selectedId}-${label}-${value}`,
+						source: selectedId,
+						target: `upstream:${value}`,
+						label
+					}
+				];
+			}
+		}
 		nodes = nodes.map((node) => {
-			if (node.id !== selectedId) return node;
+			if (node.id !== selectedId) {
+				return node;
+			}
 			const raw =
 				node.data?.raw && typeof node.data.raw === 'object'
 					? { ...(node.data.raw as Record<string, unknown>) }
@@ -204,12 +348,16 @@
 
 	function selectedBool(key: string) {
 		const raw = selectedNode?.data?.raw;
-		return Boolean(raw && typeof raw === 'object' && (raw as Record<string, unknown>)[key]);
+		return Boolean(
+			raw && typeof raw === 'object' && (raw as Record<string, unknown>)[key]
+		);
 	}
 
 	function updateSelectedBool(key: string, value: boolean) {
 		nodes = nodes.map((node) => {
-			if (node.id !== selectedId) return node;
+			if (node.id !== selectedId) {
+				return node;
+			}
 			const raw =
 				node.data?.raw && typeof node.data.raw === 'object'
 					? { ...(node.data.raw as Record<string, unknown>) }
@@ -220,32 +368,70 @@
 	}
 
 	async function saveGraph() {
+		if (graphLoaded === false || actionPending) {
+			return;
+		}
+
+		actionPending = true;
 		try {
 			const payload = toPayload();
 			const response = await fetch('/api/routing/graph', {
 				method: 'POST',
-				headers: { 'content-type': 'application/json', 'x-granger-request': '1' },
+				headers: {
+					'content-type': 'application/json',
+					'x-granger-request': '1'
+				},
 				body: JSON.stringify(payload)
 			});
-			if (!response.ok) throw new Error(await response.text());
+			const body = await response.json();
+			if (response.ok === false || body.ok !== true) {
+				const failure = body.results?.find(
+					(result: { OK: boolean }) => result.OK === false
+				);
+				throw new Error(
+					body.error ?? failure?.Output ?? 'Could not apply routing'
+				);
+			}
+			graphVersion = body.data.version;
+			graphConfig = body.config;
 			status = copy.statusSaved;
 		} catch (error) {
 			status = `${copy.statusError}: ${error instanceof Error ? error.message : String(error)}`;
+		} finally {
+			actionPending = false;
 		}
 	}
 
 	async function dryRun() {
+		if (graphLoaded === false || actionPending) {
+			return;
+		}
+
+		actionPending = true;
 		try {
-			const response = await fetch('/api/routing/dry-run', { method: 'POST', headers: { 'x-granger-request': '1' } });
-			if (!response.ok) throw new Error(await response.text());
+			const response = await fetch('/api/routing/dry-run', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					'x-granger-request': '1'
+				},
+				body: JSON.stringify(toPayload())
+			});
+			const body = await response.json();
+			if (response.ok === false || body.ok !== true) {
+				throw new Error(body.error ?? 'Could not preview routing');
+			}
 			status = copy.statusDryRun;
 		} catch (error) {
 			status = `${copy.statusError}: ${error instanceof Error ? error.message : String(error)}`;
+		} finally {
+			actionPending = false;
 		}
 	}
 
 	function toPayload(): GraphPayload {
 		return {
+			version: graphVersion,
 			config: graphConfig,
 			nodes: nodes.map((node) => ({
 				id: node.id,
@@ -272,26 +458,42 @@
 	<div class="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
 		<div>
 			<h1 class="font-display text-2xl font-bold text-white">{copy.title}</h1>
-			<p class="mt-2 max-w-4xl text-sm text-muted-foreground">{copy.description}</p>
+			<p class="mt-2 max-w-4xl text-sm text-muted-foreground">
+				{copy.description}
+			</p>
 		</div>
 		<div class="flex flex-wrap gap-2">
-			<Button variant="outline" onclick={dryRun}><WarningCircleIcon />{copy.dryRun}</Button>
-			<Button onclick={saveGraph}><FloppyDiskIcon />{copy.save}</Button>
+			<Button
+				disabled={graphLoaded === false || actionPending}
+				variant="outline"
+				onclick={dryRun}><WarningCircleIcon />{copy.dryRun}</Button
+			>
+			<Button
+				disabled={graphLoaded === false || actionPending}
+				onclick={saveGraph}><FloppyDiskIcon />{copy.save}</Button
+			>
 		</div>
 	</div>
 
-	<div class="grid gap-4 xl:grid-cols-[1fr_360px]">
+	<p class="text-sm text-muted-foreground" role="status">{status}</p>
+
+	<div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
 		<Card.Root class="overflow-hidden rounded-lg">
-			<Card.Content class="h-[640px] p-0">
+			<Card.Content class="h-[min(640px,65vh)] min-h-[360px] p-0">
 				<SvelteFlow
 					bind:nodes
 					bind:edges
 					fitView
+					colorMode="dark"
+					minZoom={0.1}
+					fitViewOptions={{ padding: 0.15, minZoom: 0.1 }}
 					proOptions={{ hideAttribution: true }}
 					onnodeclick={(event) => selectNode(event.node.id)}
+					onbeforeconnect={beforeConnect}
+					onconnect={connectRule}
 				>
 					<Controls />
-					<MiniMap pannable zoomable />
+					<MiniMap class="hidden sm:block" pannable zoomable bgColor="#101114" nodeColor="#71717a" maskColor="rgba(0,0,0,0.55)" />
 					<Background variant={BackgroundVariant.Dots} />
 				</SvelteFlow>
 			</Card.Content>
@@ -302,12 +504,29 @@
 				<Card.Header>
 					<Card.Title>{copy.addNode}</Card.Title>
 				</Card.Header>
-				<Card.Content class="flex flex-wrap gap-2">
-					{#each nodeTypes as item}
-						<Button variant="outline" size="sm" onclick={() => addNode(item.type)}>
-							<PlusIcon />{item.label}
-						</Button>
-					{/each}
+				<Card.Content class="space-y-3">
+					<Input
+						aria-label="New rule name"
+						placeholder="Rule name"
+						bind:value={newRuleName}
+						disabled={graphLoaded === false || actionPending}
+					/>
+					<Button
+						disabled={graphLoaded === false ||
+							actionPending ||
+							newRuleName.trim() === ''}
+						variant="outline"
+						size="sm"
+						onclick={addRule}><PlusIcon />Add route rule</Button
+					>
+					<p class="text-xs text-muted-foreground">
+						Create entrypoints and users on the <a
+							class="underline"
+							href="/entrypoints">Entrypoints page</a
+						>, and tunnels on the
+						<a class="underline" href="/upstreams">Upstreams page</a>. DNS nodes
+						show the configured resolvers.
+					</p>
 				</Card.Content>
 			</Card.Root>
 
@@ -320,27 +539,58 @@
 					{#if selectedNode}
 						<label class="grid gap-1.5 text-xs text-muted-foreground">
 							{copy.label}
-							<Input value={String(selectedNode.data?.label ?? '')} oninput={(event) => updateSelectedLabel(event.currentTarget.value)} />
-						</label>
-						<label class="grid gap-1.5 text-xs text-muted-foreground">
-							{copy.fallback}
 							<Input
-								value={selectedRawValue('domain_fallback_via') || selectedRawValue('fallback_when_down')}
-								placeholder="direct"
+								value={String(selectedNode.data?.label ?? '')}
+								readonly={selectedNode.data?.kind !== 'user'}
 								oninput={(event) =>
-									updateSelectedRaw(
-										String(selectedNode.data?.kind) === 'rule'
-											? 'domain_fallback_via'
-											: 'fallback_when_down',
-										event.currentTarget.value
-									)}
+									updateSelectedLabel(event.currentTarget.value)}
 							/>
 						</label>
-						{#if String(selectedNode.data?.kind) === 'upstream'}
-							<Button variant={selectedBool('default') ? 'default' : 'outline'} size="sm" onclick={() => updateSelectedBool('default', !selectedBool('default'))}>
+						{#if selectedNode.data?.kind === 'rule' || selectedNode.data?.kind === 'upstream' || selectedNode.data?.kind === 'fallback'}
+							<label class="grid gap-1.5 text-xs text-muted-foreground">
+								{copy.fallback}
+								<Input
+									value={selectedRawValue('domain_fallback_via') ||
+										selectedRawValue('fallback_when_down')}
+									placeholder="direct"
+									oninput={(event) =>
+										updateSelectedRaw(
+											String(selectedNode.data?.kind) === 'rule'
+												? 'domain_fallback_via'
+												: 'fallback_when_down',
+											event.currentTarget.value
+										)}
+								/>
+							</label>
+						{/if}
+						{#if String(selectedNode.data?.kind) === 'rule'}
+							<Button
+								aria-pressed={selectedBool('default')}
+								variant={selectedBool('default') ? 'default' : 'outline'}
+								size="sm"
+								onclick={() =>
+									updateSelectedBool(
+										'default',
+										selectedBool('default') === false
+									)}
+							>
 								{copy.defaultUpstream}
 							</Button>
-							<Button variant={selectedBool('block_fallback') ? 'destructive' : 'outline'} size="sm" onclick={() => updateSelectedBool('block_fallback', !selectedBool('block_fallback'))}>
+						{/if}
+						{#if String(selectedNode.data?.kind) === 'upstream'}
+							<Button
+								class="h-auto whitespace-normal text-left"
+								aria-pressed={selectedBool('block_fallback')}
+								variant={selectedBool('block_fallback')
+									? 'destructive'
+									: 'outline'}
+								size="sm"
+								onclick={() =>
+									updateSelectedBool(
+										'block_fallback',
+										selectedBool('block_fallback') === false
+									)}
+							>
 								{copy.blockFallback}
 							</Button>
 							<label class="grid gap-1.5 text-xs text-muted-foreground">
@@ -348,7 +598,8 @@
 								<Textarea
 									value={selectedRawValue('dns')}
 									placeholder="1.1.1.1&#10;9.9.9.9"
-									oninput={(event) => updateSelectedRaw('dns', event.currentTarget.value, true)}
+									oninput={(event) =>
+										updateSelectedRaw('dns', event.currentTarget.value, true)}
 								/>
 							</label>
 						{/if}
@@ -359,15 +610,34 @@
 						{#if String(selectedNode.data?.kind) === 'rule'}
 							<label class="grid gap-1.5 text-xs text-muted-foreground">
 								{copy.domains}
-								<Textarea value={selectedRawValue('domains')} placeholder="example.org&#10;*.media.example" oninput={(event) => updateSelectedRaw('domains', event.currentTarget.value, true)} />
+								<Textarea
+									value={selectedRawValue('domains')}
+									placeholder="example.org&#10;*.media.example"
+									oninput={(event) =>
+										updateSelectedRaw(
+											'domains',
+											event.currentTarget.value,
+											true
+										)}
+								/>
 							</label>
 							<label class="grid gap-1.5 text-xs text-muted-foreground">
 								{copy.cidrs}
-								<Textarea value={selectedRawValue('cidrs')} placeholder="10.44.0.0/16" oninput={(event) => updateSelectedRaw('cidrs', event.currentTarget.value, true)} />
+								<Textarea
+									value={selectedRawValue('cidrs')}
+									placeholder="10.44.0.0/16"
+									oninput={(event) =>
+										updateSelectedRaw('cidrs', event.currentTarget.value, true)}
+								/>
 							</label>
 							<label class="grid gap-1.5 text-xs text-muted-foreground">
 								{copy.via}
-								<Input value={selectedRawValue('via')} placeholder="default_awg" oninput={(event) => updateSelectedRaw('via', event.currentTarget.value)} />
+								<Input
+									value={selectedRawValue('via')}
+									placeholder="default_awg"
+									oninput={(event) =>
+										updateSelectedRaw('via', event.currentTarget.value)}
+								/>
 							</label>
 						{/if}
 					{:else}
@@ -380,10 +650,13 @@
 				<Card.Header>
 					<Card.Title>Nodes</Card.Title>
 				</Card.Header>
-				<Card.Content class="space-y-2">
+				<Card.Content class="max-h-72 space-y-2 overflow-y-auto">
 					{#each nodes as node}
 						<button
-							class="flex w-full items-center justify-between rounded-md border border-border bg-white/[0.03] px-3 py-2 text-left text-sm transition hover:bg-white/[0.06] {selectedId === node.id ? 'text-white' : 'text-muted-foreground'}"
+							class="flex w-full items-center justify-between rounded-md border border-border bg-white/[0.03] px-3 py-2 text-left text-sm transition hover:bg-white/[0.06] {selectedId ===
+							node.id
+								? 'text-white'
+								: 'text-muted-foreground'}"
 							onclick={() => selectNode(node.id)}
 						>
 							<span>{node.data?.label}</span>
