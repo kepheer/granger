@@ -168,11 +168,16 @@ func applyUpstreamFirewall(name string, up config.Upstream, ctx ApplyContext) []
 	res = append(res, ctx.Runner.Run("Create ipset "+setName, 10*time.Second, nil, "ipset", "create", setName, "hash:ip", "family", "inet", "timeout", "86400", "-exist"))
 	res = append(res, ctx.Runner.Run("Flush ipset "+setName, 10*time.Second, nil, "ipset", "flush", setName))
 	res = append(res, runShell(ctx, "Mark domain set "+name, netfilter.EnsureAppend("mangle", netfilter.MangleChain, "-i", ctx.Output.Interface, "-m", "set", "--match-set", setName, "dst", "-j", "MARK", "--set-mark", mark)))
+	res = append(res, populateStaticHosts(name, ctx)...)
+	res = append(res, runShell(ctx, "Mark static hosts "+name, netfilter.EnsureAppend("mangle", netfilter.MangleChain, "-i", ctx.Output.Interface, "-m", "set", "--match-set", staticHostSet(name), "dst", "-j", "MARK", "--set-mark", mark)))
 	for _, rule := range ctx.Config.Rules {
 		if rule.Via != name {
 			continue
 		}
 		for _, cidr := range rule.CIDRs {
+			if _, host := hostCIDR(cidr); host {
+				continue
+			}
 			res = append(res, runShell(ctx, "Mark CIDR "+cidr+" via "+name, netfilter.EnsureAppend("mangle", netfilter.MangleChain, "-i", ctx.Output.Interface, "-d", cidr, "-j", "MARK", "--set-mark", mark)))
 		}
 	}
