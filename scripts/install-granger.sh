@@ -290,7 +290,7 @@ main() {
   printf '\nGranger installed.\n'
   printf 'Open: http://%s\n' "$LISTEN"
   printf 'Administrative token: /etc/granger/secrets/admin-token\n'
-  printf 'After connecting a VPN profile, open http://granger.internal/ using its configured DNS.\n'
+  printf 'After connecting a VPN profile, open its entrypoint server IP in your browser (HTTP port 80).\n'
   printf 'Initial access is available through an SSH tunnel to the loopback GUI.\n'
   printf 'Protocol packages are installed later from the GUI.\n'
 }

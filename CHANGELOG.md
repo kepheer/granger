@@ -7,4 +7,4 @@
 - Added domain and subnet routing with fallback.
 - Added tunnel and route recovery after reboot.
 - Moved driver installation to the web interface.
-- Added automatic granger.internal access and DNS-based routing over VPN.
+- Added web panel access by VPN IP and DNS-based routing.
