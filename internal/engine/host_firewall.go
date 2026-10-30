@@ -36,6 +36,10 @@ func renderHostControlAccess(cfg config.Config) string {
 			if source == nil || source.To4() == nil {
 				continue
 			}
+			if hasSNIRules(cfg) && routedSNIOutput(out) {
+				fmt.Fprintf(&body, "add rule inet host_security granger_control iifname %q ip saddr %s meta mark & 0x80000000 == 0x80000000 tcp dport { 80, 443 } accept\n", out.Interface, source.String())
+				fmt.Fprintf(&body, "add rule inet host_security granger_control iifname %q ip saddr %s meta mark & 0x80000000 == 0x80000000 udp dport 443 accept\n", out.Interface, source.String())
+			}
 			for _, protocol := range []string{"tcp", "udp"} {
 				fmt.Fprintf(&body, "add rule inet host_security granger_control iifname %q ip saddr %s ip daddr %s %s dport 53 accept\n", out.Interface, source.String(), destination.String(), protocol)
 			}

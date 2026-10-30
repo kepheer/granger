@@ -29,3 +29,21 @@ func TestHostControlAccessDoesNotAllowRevokedClients(t *testing.T) {
 		t.Fatal("disabled GUI allowed")
 	}
 }
+
+func TestHostSNIAllowsOnlyMarkedWebTrafficFromActiveVPNClients(t *testing.T) {
+	cfg := sniFixture()
+	out := cfg.Outputs["vpn"]
+	out.ServerIP = "10.19.84.51"
+	cfg.Outputs["vpn"] = out
+	body := renderHostControlAccess(cfg)
+	if strings.Contains(body, `iifname "awg-test" ip saddr 10.19.84.2 meta mark & 0x80000000 == 0x80000000 tcp dport { 80, 443 } accept`) == false {
+		t.Fatal("active transparent web traffic was not allowed")
+	}
+	if strings.Contains(body, "ip saddr 10.19.84.5") || strings.Contains(body, "19845") {
+		t.Fatal("revoked client or direct listener access was allowed")
+	}
+	cfg.Rules[0].DomainMatch = ""
+	if strings.Contains(renderHostControlAccess(cfg), "0x80000000") {
+		t.Fatal("SNI access remains when SNI routing is disabled")
+	}
+}
