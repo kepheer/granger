@@ -45,8 +45,7 @@
 
 	const copy = {
 		title: 'Routing',
-		description:
-			'Choose where user traffic goes',
+		description: 'Choose where user traffic goes',
 		addNode: 'Add rule',
 		save: 'Save routing',
 		dryRun: 'Preview changes',
@@ -123,7 +122,10 @@
 		for (const kind of kinds) {
 			const group = items.filter((item) => item.type === kind);
 			group.forEach((item, index) => {
-				positions.set(item.id, { x: (index % 3) * 230, y: offset + Math.floor(index / 3) * 100 });
+				positions.set(item.id, {
+					x: (index % 3) * 230,
+					y: offset + Math.floor(index / 3) * 100
+				});
 			});
 			if (group.length > 0) {
 				offset += Math.ceil(group.length / 3) * 100 + 60;
@@ -146,11 +148,21 @@
 			const raw = (node.data ?? {}) as Record<string, unknown>;
 			const source = `output:${String(raw.output ?? '')}`;
 			if (nodeIDs.has(source)) {
-				links.push({ id: `profile:${node.id}`, source, target: node.id, label: 'profile' });
+				links.push({
+					id: `profile:${node.id}`,
+					source,
+					target: node.id,
+					label: 'profile'
+				});
 			}
 			const target = `upstream:${String(raw.default_upstream ?? '')}`;
 			if (nodeIDs.has(target)) {
-				links.push({ id: `default:${node.id}`, source: node.id, target, label: 'default' });
+				links.push({
+					id: `default:${node.id}`,
+					source: node.id,
+					target,
+					label: 'default'
+				});
 			}
 		}
 
@@ -231,8 +243,7 @@
 			target?.data?.kind !== 'upstream' ||
 			target.id.startsWith('upstream:') === false
 		) {
-			status =
-				'Connect a rule to an upstream and set a backup if needed';
+			status = 'Connect a rule to an upstream and set a backup if needed';
 			return false;
 		}
 
@@ -493,7 +504,14 @@
 					onconnect={connectRule}
 				>
 					<Controls />
-					<MiniMap class="hidden sm:block" pannable zoomable bgColor="#101114" nodeColor="#71717a" maskColor="rgba(0,0,0,0.55)" />
+					<MiniMap
+						class="hidden sm:block"
+						pannable
+						zoomable
+						bgColor="#101114"
+						nodeColor="#71717a"
+						maskColor="rgba(0,0,0,0.55)"
+					/>
 					<Background variant={BackgroundVariant.Dots} />
 				</SvelteFlow>
 			</Card.Content>
@@ -520,10 +538,10 @@
 						onclick={addRule}><PlusIcon />Add rule</Button
 					>
 					<p class="text-xs text-muted-foreground">
-						Manage users on the <a
-							class="underline"
-							href="/entrypoints">Entrypoints page</a
-						> and connections on the
+						Manage users on the <a class="underline" href="/entrypoints"
+							>Entrypoints page</a
+						>
+						and connections on the
 						<a class="underline" href="/upstreams">Upstreams page</a>
 					</p>
 				</Card.Content>
@@ -564,7 +582,21 @@
 						{/if}
 						{#if String(selectedNode.data?.kind) === 'rule'}
 							<Button
+								aria-pressed={selectedRawValue('domain_match') === 'sni'}
+								variant={selectedRawValue('domain_match') === 'sni'
+									? 'default'
+									: 'outline'}
+								disabled={selectedBool('default')}
+								size="sm"
+								onclick={() =>
+									updateSelectedRaw(
+										'domain_match',
+										selectedRawValue('domain_match') === 'sni' ? '' : 'sni'
+									)}>Match domains using SNI</Button
+							>
+							<Button
 								aria-pressed={selectedBool('default')}
+								disabled={selectedRawValue('domain_match') === 'sni'}
 								variant={selectedBool('default') ? 'default' : 'outline'}
 								size="sm"
 								onclick={() =>

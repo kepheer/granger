@@ -38,8 +38,14 @@ func NewWithRegistry(r runner.Runner, reg *driver.Registry) Engine {
 
 func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 	cfg = e.effectiveConfig(cfg)
+	sniConfig := cfg
+	cfg = kernelDomainRules(cfg)
 	ctx := driver.BaseContext(cfg, e.Runner)
 	var res []runner.Result
+	res = append(res, e.prepareSNI(sniConfig)...)
+	if resultsOK(res) == false {
+		return ApplyPlan{Results: res, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
+	}
 	res = append(res, e.beginRoutingUpdate(cfg)...)
 	if resultsOK(res) == false {
 		return ApplyPlan{Results: res, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
@@ -120,6 +126,7 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 		}
 	}
 	res = append(res, e.applyUserDefaultRoutes(cfg)...)
+	res = append(res, e.applySNICapture(sniConfig)...)
 	res = append(res, e.applyDNSCapture(cfg))
 	dnsRules := e.DNSRules(cfg, ctx)
 	res = append(res, dns.New(e.Runner).Apply(cfg, dnsRules)...)

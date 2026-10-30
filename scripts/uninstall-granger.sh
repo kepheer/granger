@@ -12,6 +12,9 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 systemctl disable --now granger.service 2>/dev/null || true
+systemctl disable --now granger-sni.service 2>/dev/null || true
+while ip rule del fwmark 0x80000000/0x80000000 table 19845 priority 100 2>/dev/null; do :; done
+ip route flush table 19845 2>/dev/null || true
 
 cleanup_linked_configs() {
   directory="$1"

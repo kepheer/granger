@@ -1167,6 +1167,13 @@ func prepareOutputConfig(name string, payload outputPayload) (config.Output, err
 }
 
 func protocolInUse(cfg config.Config, name string) bool {
+	if name == "xray" {
+		for _, rule := range cfg.Rules {
+			if rule.DomainMatch == "sni" {
+				return true
+			}
+		}
+	}
 	for _, out := range cfg.Outputs {
 		if out.Type == name {
 			return true

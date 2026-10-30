@@ -94,6 +94,7 @@ type Upstream struct {
 }
 
 type Rule struct {
+	DomainMatch       string   `json:"domain_match,omitempty" yaml:"domain_match,omitempty"`
 	Name              string   `json:"name" yaml:"name"`
 	Domains           []string `json:"domains,omitempty" yaml:"domains,omitempty"`
 	CIDRs             []string `json:"cidrs,omitempty" yaml:"cidrs,omitempty"`
@@ -315,6 +316,12 @@ func (c Config) Validate() error {
 	}
 	defaultRule := ""
 	for _, rule := range c.Rules {
+		if rule.DomainMatch != "" && rule.DomainMatch != "sni" {
+			return errors.New("rule " + rule.Name + " has an unsupported domain matcher")
+		}
+		if rule.DomainMatch == "sni" && (len(rule.Domains) == 0 || rule.Default) {
+			return errors.New("SNI rules require domains and cannot be defaults")
+		}
 		if rule.Via == "" {
 			return errors.New("rule " + rule.Name + " has empty via")
 		}

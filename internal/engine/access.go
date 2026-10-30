@@ -42,6 +42,9 @@ func (e Engine) applyUserAccess(cfg config.Config) []runner.Result {
 			if proxy == false && (out.Interface == "" || client.IP == "") {
 				continue
 			}
+			if proxy == false && hasSNIRules(cfg) {
+				writeSNIOutputAccess(&body, cfg, outputName, out, client)
+			}
 			if proxy == false {
 				writeClientInput(&body, cfg, out, client)
 			}
@@ -113,6 +116,11 @@ func writeClientInput(body *strings.Builder, cfg config.Config, out config.Outpu
 		return
 	}
 	if active && exists {
+		if hasSNIRules(cfg) {
+			for _, protocol := range []string{"tcp", "udp"} {
+				body.WriteString(accessRule(netfilter.UserInputChain, "-i", out.Interface, "-s", client.IP, "-m", "mark", "--mark", sniCaptureMark, "-p", protocol, "-j", "ACCEPT"))
+			}
+		}
 		for _, address := range cfg.GUIVPNAddresses() {
 			body.WriteString(accessRule(netfilter.UserInputChain, append(append([]string{}, match...), "-d", address, "-p", "tcp", "--dport", strconv.Itoa(cfg.Server.GUIVPNPort), "-j", "ACCEPT")...))
 		}
