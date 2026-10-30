@@ -19,8 +19,10 @@ import (
 	"sync"
 	"time"
 
+	"granger/internal/classifier"
 	"granger/internal/config"
 	"granger/internal/engine"
+	"granger/internal/modules"
 	"granger/internal/protocols"
 	"granger/internal/provision"
 	grruntime "granger/internal/runtime"
@@ -74,7 +76,7 @@ func (s Server) ListenAndServe() error {
 
 func (s Server) handler(dir string) http.Handler {
 	r := runner.New()
-	api := apiServer{runner: r, engine: engine.New(r), snx: snx.New(r)}
+	api := apiServer{runner: r, engine: engine.New(r), snxSessions: snx.NewRegistry(r)}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", http.StripPrefix("/api", requireAdmin(api.routes())))
 	mux.Handle("/", spaHandler(dir))
@@ -141,9 +143,9 @@ func securityHeaders(next http.Handler) http.Handler {
 }
 
 type apiServer struct {
-	runner runner.Runner
-	engine engine.Engine
-	snx    *snx.Manager
+	runner      runner.Runner
+	engine      engine.Engine
+	snxSessions *snx.Registry
 }
 
 type apiResponse struct {
@@ -204,6 +206,13 @@ type routingGraph struct {
 
 func (a apiServer) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/modules", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w)
+			return
+		}
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: modules.All()})
+	})
 	mux.HandleFunc("/config", a.handleConfig)
 	mux.HandleFunc("/config/export", a.handleConfigExport)
 	mux.HandleFunc("/config/import", a.handleConfigImport)
@@ -219,13 +228,16 @@ func (a apiServer) routes() http.Handler {
 	mux.HandleFunc("/snx/", a.handleSNX)
 	mux.HandleFunc("/routing/graph", a.handleRoutingGraph)
 	mux.HandleFunc("/routing/dry-run", a.handleRoutingDryRun)
+	mux.HandleFunc("/jobs", a.handleJobs)
+	mux.HandleFunc("/jobs/", a.handleJobs)
 	mux.HandleFunc("/protocols", a.handleProtocols)
 	mux.HandleFunc("/protocols/install", a.handleProtocolInstall)
 	mux.HandleFunc("/protocols/uninstall", a.handleProtocolUninstall)
-	return requireMutationHeader(mux)
+	return requireMutationHeader(a.configurationTransaction(mux))
 }
 
 var mutationMu sync.Mutex
+var configPath = config.Path
 
 func requireMutationHeader(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -236,6 +248,10 @@ func requireMutationHeader(next http.Handler) http.Handler {
 		}
 		if r.Header.Get("X-Granger-Request") != "1" {
 			writeErrorText(w, http.StatusForbidden, "missing CSRF request header")
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/jobs/") {
+			next.ServeHTTP(w, r)
 			return
 		}
 		if strings.HasPrefix(r.URL.Path, "/snx/") && (strings.HasSuffix(r.URL.Path, "/start") || strings.HasSuffix(r.URL.Path, "/submit") || strings.HasSuffix(r.URL.Path, "/cancel")) {
@@ -251,6 +267,10 @@ func requireMutationHeader(next http.Handler) http.Handler {
 }
 
 func (a apiServer) handleProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPut {
+		a.changeProfile(w, r)
+		return
+	}
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
@@ -351,7 +371,7 @@ func (a apiServer) handleConfigImport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := config.SaveAtomic(config.Path, cfg); err != nil {
+	if err := saveConfig(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -460,6 +480,7 @@ func (a apiServer) handleUpstream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		a.cancelSNX(name, up)
 		up.Enabled = &body.Enabled
 		cfg.Upstreams[name] = up
 		if err := saveConfig(cfg); err != nil {
@@ -482,6 +503,7 @@ func (a apiServer) handleUpstream(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		a.cancelSNX(name, up)
 		next, err := a.prepareUpstreamConfig(name, payload)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -492,7 +514,7 @@ func (a apiServer) handleUpstream(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg})
+		writeApplyResponse(w, cfg, a.applyPending(cfg))
 	case http.MethodDelete:
 		if err := canDeleteUpstream(cfg, name); err != nil {
 			writeError(w, http.StatusConflict, err)
@@ -545,6 +567,7 @@ func (a apiServer) handleUpstreamConfig(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	a.cancelSNX(name, up)
 	path, err := writeUpstreamInlineConfig(name, body.ConfigName, body.InlineConfig)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -556,7 +579,7 @@ func (a apiServer) handleUpstreamConfig(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg})
+	writeApplyResponse(w, cfg, a.applyPending(cfg))
 }
 
 func (a apiServer) handleOutputs(w http.ResponseWriter, r *http.Request) {
@@ -668,7 +691,7 @@ func (a apiServer) handleOutput(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, apiResponse{OK: true, Config: &cfg})
+		writeApplyResponse(w, cfg, a.applyPending(cfg))
 	case http.MethodDelete:
 		if err := canDeleteOutput(cfg, name); err != nil {
 			writeError(w, http.StatusConflict, err)
@@ -779,6 +802,16 @@ func (a apiServer) handleUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a apiServer) handleUser(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/users/"), "/"), "/")
+	if len(parts) == 2 && parts[1] == "profiles" {
+		cfg, err := loadConfig()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		a.handleUserProfiles(w, r, cfg, parts[0])
+		return
+	}
 	id := safeConfigName(strings.Trim(strings.TrimPrefix(r.URL.Path, "/users/"), "/"))
 	cfg, err := loadConfig()
 	if err != nil {
@@ -840,12 +873,28 @@ func (a apiServer) handleUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		results := a.engine.ApplyConfig(cfg).Results
-		results = append(results, a.engine.UpdateClients(user.Output, id, cfg)...)
+		for name, out := range cfg.Outputs {
+			for _, client := range out.Clients {
+				if client.User == id {
+					results = append(results, a.engine.UpdateClients(name, id, cfg)...)
+					break
+				}
+			}
+		}
 		writeApplyResponse(w, cfg, results)
 	case http.MethodDelete:
 		if err := provision.RevokeUser(&cfg, id); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
+		}
+		affected := []string{}
+		for name, out := range cfg.Outputs {
+			for _, client := range out.Clients {
+				if client.User == id {
+					affected = append(affected, name)
+					break
+				}
+			}
 		}
 		delete(cfg.Users, id)
 		for outputName, out := range cfg.Outputs {
@@ -863,7 +912,9 @@ func (a apiServer) handleUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		results := a.engine.ApplyConfig(cfg).Results
-		results = append(results, a.engine.UpdateClients(user.Output, id, cfg)...)
+		for _, name := range affected {
+			results = append(results, a.engine.UpdateClients(name, id, cfg)...)
+		}
 		writeApplyResponse(w, cfg, results)
 	default:
 		methodNotAllowed(w)
@@ -888,6 +939,8 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 		writeErrorText(w, http.StatusNotFound, "unknown SNX-RS upstream")
 		return
 	}
+	manager := a.snxSessions.Connection(name)
+
 	switch action {
 	case "status":
 		if r.Method != http.MethodGet {
@@ -902,10 +955,11 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 		_, driverErr := exec.LookPath("snxctl")
 		data := struct {
 			snx.PendingStatus
-			ConfigReady     bool   `json:"config_ready"`
-			ConfigError     string `json:"config_error,omitempty"`
-			DriverInstalled bool   `json:"driver_installed"`
-		}{a.snx.PendingStatus(), configErr == nil, configMessage, driverErr == nil}
+			ConfigReady     bool            `json:"config_ready"`
+			ConfigError     string          `json:"config_error,omitempty"`
+			DriverInstalled bool            `json:"driver_installed"`
+			InitialStep     config.AuthStep `json:"initial_step"`
+		}{manager.PendingStatus(), configErr == nil, configMessage, driverErr == nil, snx.InitialStep(up)}
 		writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: data})
 	case "start":
 		if r.Method != http.MethodPost {
@@ -917,11 +971,11 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if a.snx.StartAsync(up, body.Inputs, a.reconcileSNX) == false {
+		if manager.StartAsync(up, body.Inputs, a.reconcileSNX) == false {
 			writeErrorText(w, http.StatusConflict, "Sign-in is already in progress")
 			return
 		}
-		writeJSON(w, http.StatusAccepted, apiResponse{OK: true, Data: a.snx.PendingStatus()})
+		writeJSON(w, http.StatusAccepted, apiResponse{OK: true, Data: manager.PendingStatus()})
 	case "submit":
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w)
@@ -932,26 +986,26 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if a.snx.SubmitAsync(body.Inputs, a.reconcileSNX) == false {
+		if manager.SubmitAsync(body.Inputs, a.reconcileSNX) == false {
 			writeErrorText(w, http.StatusConflict, "Sign-in is already in progress")
 			return
 		}
-		writeJSON(w, http.StatusAccepted, apiResponse{OK: true, Data: a.snx.PendingStatus()})
+		writeJSON(w, http.StatusAccepted, apiResponse{OK: true, Data: manager.PendingStatus()})
 	case "cancel":
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w)
 			return
 		}
-		a.snx.Cancel()
-		writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: a.snx.PendingStatus()})
+		manager.Cancel()
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: manager.PendingStatus()})
 	case "disconnect":
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w)
 			return
 		}
-		results := []runner.Result{a.snx.Disconnect(up.Config)}
+		results := []runner.Result{manager.Disconnect(up.Config)}
 		results = append(results, a.engine.ApplyConfig(cfg).Results...)
-		writeJSON(w, http.StatusOK, apiResponse{OK: allResultsOK(results), Results: results, Data: a.snx.PendingStatus()})
+		writeJSON(w, http.StatusOK, apiResponse{OK: allResultsOK(results), Results: results, Data: manager.PendingStatus()})
 	default:
 		writeErrorText(w, http.StatusNotFound, "unknown SNX-RS action")
 	}
@@ -1020,7 +1074,6 @@ func (a apiServer) handleRoutingDryRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	e := engine.New(runner.NewDryRun())
 	if r.ContentLength != 0 {
 		var graph routingGraph
 		if err := readJSON(r, &graph); err != nil {
@@ -1038,69 +1091,16 @@ func (a apiServer) handleRoutingDryRun(w http.ResponseWriter, r *http.Request) {
 		}
 		cfg = next
 	}
-	plan := e.ApplyConfig(cfg)
-	writeJSON(w, http.StatusOK, apiResponse{OK: allResultsOK(plan.Results), Results: plan.Results, Data: map[string]string{"firewall": plan.Firewall}})
+	plan := a.engine.PreviewConfig(cfg)
+	writeJSON(w, http.StatusOK, apiResponse{OK: allResultsOK(plan.Results), Results: plan.Results, Data: map[string]string{"firewall": plan.Firewall, "preview": "current connection state"}})
 }
 
 func (a apiServer) handleProtocolInstall(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w)
-		return
-	}
-	var body struct {
-		Name string `json:"name"`
-	}
-	if err := readJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	manager := protocols.New(a.runner)
-	status, results, err := manager.Install(body.Name)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, apiResponse{OK: false, Error: err.Error(), Results: results, Data: status})
-		return
-	}
-	ok := true
-	for _, result := range results {
-		if !result.OK {
-			ok = false
-			break
-		}
-	}
-	httpStatus := http.StatusOK
-	if !ok {
-		httpStatus = http.StatusAccepted
-	}
-	writeJSON(w, httpStatus, apiResponse{OK: ok, Results: results, Data: status})
+	a.startProtocolJob(w, r, "install")
 }
 
 func (a apiServer) handleProtocolUninstall(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w)
-		return
-	}
-	var body struct {
-		Name string `json:"name"`
-	}
-	if err := readJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	cfg, err := loadConfig()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	if protocolInUse(cfg, body.Name) {
-		writeErrorText(w, http.StatusConflict, "protocol is still referenced by configured upstreams or outputs")
-		return
-	}
-	status, results, err := protocols.New(a.runner).Uninstall(body.Name)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, apiResponse{OK: allResultsOK(results), Results: results, Data: status})
+	a.startProtocolJob(w, r, "uninstall")
 }
 
 func (a apiServer) handleProtocols(w http.ResponseWriter, r *http.Request) {
@@ -1167,13 +1167,13 @@ func prepareOutputConfig(name string, payload outputPayload) (config.Output, err
 }
 
 func protocolInUse(cfg config.Config, name string) bool {
-	if name == "xray" {
-		for _, rule := range cfg.Rules {
-			if rule.DomainMatch == "sni" {
-				return true
-			}
+	if classifier.NeedsTransparent(cfg) {
+		backend, err := classifier.DefaultRegistry(runner.New()).Find(cfg.Server.DomainRouterSettings().Backend)
+		if err == nil && backend.Dependency() == name {
+			return true
 		}
 	}
+
 	for _, out := range cfg.Outputs {
 		if out.Type == name {
 			return true
@@ -1213,6 +1213,10 @@ func canDeleteUpstream(cfg config.Config, name string) error {
 }
 
 func canDeleteOutput(cfg config.Config, name string) error {
+	if len(cfg.Outputs[name].Clients) > 0 {
+		return errors.New("entrypoint still has issued profiles")
+	}
+
 	for userID, user := range cfg.Users {
 		if user.Output == name {
 			return errors.New("output still has issued profile " + userID)
@@ -1355,7 +1359,7 @@ func graphName(node graphNode) string {
 }
 
 func loadConfig() (config.Config, error) {
-	cfg, err := config.Load(config.Path)
+	cfg, err := config.Load(configPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return config.Default("", "auto", "auto"), nil
 	}
@@ -1366,7 +1370,13 @@ func saveConfig(cfg config.Config) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	return config.SaveAtomic(config.Path, cfg)
+	if err := engine.New(runner.New()).ValidateConfig(cfg); err != nil {
+		return err
+	}
+	if err := validateModuleJobs(cfg); err != nil {
+		return err
+	}
+	return config.SaveAtomic(configPath+".pending", cfg)
 }
 
 func readJSON(r *http.Request, dst any) error {
@@ -1513,4 +1523,10 @@ func updateUserCredentials(cfg *config.Config, id string, disabled *bool) error 
 func configVersion(cfg config.Config) string {
 	body, _ := json.Marshal(cfg)
 	return fmt.Sprintf("%x", sha256.Sum256(body))
+}
+
+func (a apiServer) cancelSNX(name string, up config.Upstream) {
+	if up.Type == "snx-rs" && a.snxSessions != nil {
+		a.snxSessions.Connection(name).Cancel()
+	}
 }

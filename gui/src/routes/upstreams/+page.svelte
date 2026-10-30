@@ -2,7 +2,12 @@
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
-	import { ArrowClockwiseIcon, CheckCircleIcon, PlusIcon, WarningCircleIcon } from 'phosphor-svelte';
+	import {
+		ArrowClockwiseIcon,
+		CheckCircleIcon,
+		PlusIcon,
+		WarningCircleIcon
+	} from 'phosphor-svelte';
 
 	type ProtocolStatus = {
 		name: string;
@@ -31,8 +36,7 @@
 
 	const copy = {
 		title: 'Upstreams',
-		description:
-			'Choose where user traffic leaves the server',
+		description: 'Choose where user traffic leaves the server',
 		add: 'Add upstream',
 		name: 'Name',
 		type: 'Type',
@@ -44,8 +48,7 @@
 		pending: 'Pending',
 		hint: 'Select a connection to view its settings',
 		packages: 'Drivers',
-		packagesHint:
-			'Install a driver before adding a connection',
+		packagesHint: 'Install a driver before adding a connection',
 		installed: 'Installed',
 		install: 'Install',
 		manual: 'Manual installation',
@@ -82,9 +85,10 @@
 			protocols = body.data ?? [];
 			protocolFailed = false;
 			protocolMessage = '';
-		} catch {
+		} catch (error) {
 			protocolFailed = true;
-			protocolMessage = copy.unavailable;
+			protocolMessage =
+				error instanceof Error ? error.message : copy.unavailable;
 		} finally {
 			protocolsLoading = false;
 		}
@@ -107,7 +111,14 @@
 					name,
 					type: String(item.type ?? ''),
 					iface: String(item.interface ?? ''),
-					config: String(item.config || (item.type === 'direct' ? 'System uplink' : item.type === 'interface' ? 'Existing network interface' : 'No configuration')),
+					config: String(
+						item.config ||
+							(item.type === 'direct'
+								? 'System uplink'
+								: item.type === 'interface'
+									? 'Existing network interface'
+									: 'No configuration')
+					),
 					status: item.enabled === false ? 'disabled' : 'enabled'
 				};
 			});
@@ -131,26 +142,63 @@
 		try {
 			const response = await fetch('/api/protocols/install', {
 				method: 'POST',
-				headers: { 'content-type': 'application/json', 'x-granger-request': '1' },
+				headers: {
+					'content-type': 'application/json',
+					'x-granger-request': '1'
+				},
 				body: JSON.stringify({ name })
 			});
-			const body = (await response.json()) as ApiResponse<ProtocolStatus>;
-			if (body.data) {
-				const status = body.data;
-				protocols = protocols.map((item) => (item.name === name ? status : item));
+			const accepted = await response.json();
+			if (
+				response.ok === false ||
+				accepted.ok !== true ||
+				typeof accepted.data?.id !== 'string'
+			) {
+				throw new Error(accepted.error ?? 'Could not start installation');
 			}
-			protocolFailed = response.ok === false || body.ok !== true;
-			protocolResults = body.results ?? body.data?.commands ?? [];
-			protocolMessage = body.error ?? (body.data?.installed === true ? 'Driver installed' : body.data?.summary ?? '');
-		} catch {
+			const jobID = accepted.data.id;
+			let finished = false;
+			while (finished === false) {
+				await new Promise((resolve) => setTimeout(resolve, 1500));
+				const jobResponse = await fetch(
+					`/api/jobs/${encodeURIComponent(jobID)}`
+				);
+				const jobBody = await jobResponse.json();
+				if (jobResponse.ok === false || jobBody.ok !== true) {
+					throw new Error(
+						jobBody.error ?? 'Could not read installation status'
+					);
+				}
+				const job = jobBody.data;
+				if (job.state === 'running') {
+					continue;
+				}
+				finished = true;
+				protocolResults = job.results ?? [];
+				protocolFailed = job.state !== 'succeeded';
+				protocolMessage =
+					job.error ||
+					(protocolFailed ? 'Driver installation failed' : 'Driver installed');
+			}
+			await loadProtocols();
+		} catch (error) {
 			protocolFailed = true;
-			protocolMessage = copy.unavailable;
+			protocolMessage =
+				error instanceof Error ? error.message : copy.unavailable;
 		} finally {
 			installing = '';
 		}
 	}
 
-	let upstreams = $state<Array<{ name: string; type: string; iface: string; config: string; status: string }>>([]);
+	let upstreams = $state<
+		Array<{
+			name: string;
+			type: string;
+			iface: string;
+			config: string;
+			status: string;
+		}>
+	>([]);
 </script>
 
 <svelte:head>
@@ -161,40 +209,62 @@
 	<div class="flex flex-col justify-between gap-4 md:flex-row md:items-end">
 		<div>
 			<h1 class="font-display text-2xl font-bold text-white">{copy.title}</h1>
-			<p class="mt-2 max-w-3xl text-sm text-muted-foreground">{copy.description}</p>
+			<p class="mt-2 max-w-3xl text-sm text-muted-foreground">
+				{copy.description}
+			</p>
 		</div>
 		<Button href="/upstreams/new"><PlusIcon />{copy.add}</Button>
 	</div>
 
 	<Card.Root class="rounded-lg">
-		<Card.Header class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+		<Card.Header
+			class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"
+		>
 			<div>
 				<Card.Title>{copy.packages}</Card.Title>
 				<Card.Description>{copy.packagesHint}</Card.Description>
 			</div>
-			<Button disabled={installing !== ''} variant="outline" onclick={loadProtocols}><ArrowClockwiseIcon />{copy.refresh}</Button>
+			<Button
+				disabled={installing !== ''}
+				variant="outline"
+				onclick={loadProtocols}><ArrowClockwiseIcon />{copy.refresh}</Button
+			>
 		</Card.Header>
 		<Card.Content class="space-y-3">
 			{#if protocolMessage}
-				<div role={protocolFailed ? 'alert' : 'status'} class="rounded-md border border-border bg-white/[0.03] px-3 py-2 text-sm {protocolFailed ? 'text-red-300' : 'text-muted-foreground'}">
+				<div
+					role={protocolFailed ? 'alert' : 'status'}
+					class="rounded-md border border-border bg-white/[0.03] px-3 py-2 text-sm {protocolFailed
+						? 'text-red-300'
+						: 'text-muted-foreground'}"
+				>
 					{protocolMessage}
 				</div>
 			{/if}
 			{#if protocolResults.length}
 				<div class="rounded-lg border border-border bg-black/25">
-					<div class="border-b border-border px-4 py-3 text-sm font-medium text-white">
+					<div
+						class="border-b border-border px-4 py-3 text-sm font-medium text-white"
+					>
 						{copy.installLog}
 					</div>
 					<div class="divide-y divide-border">
 						{#each protocolResults as result}
 							<div class="space-y-2 p-4">
 								<div class="flex items-center justify-between gap-3">
-									<div class="text-sm font-medium text-white">{result.Title}</div>
-									<span class={result.OK ? 'text-xs text-emerald-300' : 'text-xs text-red-300'}>
+									<div class="text-sm font-medium text-white">
+										{result.Title}
+									</div>
+									<span
+										class={result.OK
+											? 'text-xs text-emerald-300'
+											: 'text-xs text-red-300'}
+									>
 										{result.Status}
 									</span>
 								</div>
-								<pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-black/35 p-3 text-xs text-white/75">$ {result.Command}
+								<pre
+									class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-black/35 p-3 text-xs text-white/75">$ {result.Command}
 {result.Output}</pre>
 							</div>
 						{/each}
@@ -202,13 +272,24 @@
 				</div>
 			{/if}
 			<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-				{#if protocolsLoading}<p role="status" class="text-sm text-muted-foreground">Loading drivers…</p>{/if}
-			{#each protocols as protocol}
+				{#if protocolsLoading}<p
+						role="status"
+						class="text-sm text-muted-foreground"
+					>
+						Loading drivers…
+					</p>{/if}
+				{#each protocols as protocol}
 					<div class="rounded-lg border border-border bg-card/60 p-4">
 						<div class="flex items-start justify-between gap-3">
 							<div>
-								<div class="font-medium text-white">{protocol.display_name}</div>
-								{#if protocol.installed === false && protocol.summary !== 'Not installed'}<div class="mt-1 text-xs text-muted-foreground">{protocol.summary}</div>{/if}
+								<div class="font-medium text-white">
+									{protocol.display_name}
+								</div>
+								{#if protocol.installed === false && protocol.summary !== 'Not installed'}<div
+										class="mt-1 text-xs text-muted-foreground"
+									>
+										{protocol.summary}
+									</div>{/if}
 							</div>
 							<span
 								class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs {protocol.installed
@@ -221,7 +302,9 @@
 									<CheckCircleIcon class="size-3.5" />{copy.installed}
 								{:else}
 									<WarningCircleIcon class="size-3.5" />{protocol.installable
-										? protocol.state === 'failed' ? 'Installation failed' : 'Not installed'
+										? protocol.state === 'failed'
+											? 'Installation failed'
+											: 'Not installed'
 										: copy.manual}
 								{/if}
 							</span>
@@ -229,11 +312,19 @@
 						<div class="mt-4">
 							<Button
 								size="sm"
-								variant={protocol.installable && protocol.installed === false ? 'default' : 'outline'}
-								disabled={protocol.installable === false || protocol.installed || installing !== ''}
+								variant={protocol.installable && protocol.installed === false
+									? 'default'
+									: 'outline'}
+								disabled={protocol.installable === false ||
+									protocol.installed ||
+									installing !== ''}
 								onclick={() => installProtocol(protocol.name)}
 							>
-								{installing === protocol.name ? 'Installing…' : protocol.state === 'failed' ? 'Retry installation' : copy.install}
+								{installing === protocol.name
+									? 'Installing…'
+									: protocol.state === 'failed'
+										? 'Retry installation'
+										: copy.install}
 							</Button>
 						</div>
 					</div>
@@ -248,46 +339,61 @@
 			<Card.Description>{copy.hint}</Card.Description>
 		</Card.Header>
 		<Card.Content>
-			{#if upstreamError}<p role="alert" class="mb-3 text-sm text-red-300">{upstreamError}</p>{/if}
-			{#if upstreamsLoading}<p role="status" class="mb-3 text-sm text-muted-foreground">Loading upstreams…</p>{/if}
-			{#if upstreamsLoading === false && upstreamError === '' && upstreams.length === 0}<p class="mb-3 text-sm text-muted-foreground">No upstreams yet — add a connection to route traffic</p>{/if}
+			{#if upstreamError}<p role="alert" class="mb-3 text-sm text-red-300">
+					{upstreamError}
+				</p>{/if}
+			{#if upstreamsLoading}<p
+					role="status"
+					class="mb-3 text-sm text-muted-foreground"
+				>
+					Loading upstreams…
+				</p>{/if}
+			{#if upstreamsLoading === false && upstreamError === '' && upstreams.length === 0}<p
+					class="mb-3 text-sm text-muted-foreground"
+				>
+					No upstreams yet — add a connection to route traffic
+				</p>{/if}
 			{#if upstreams.length > 0}
-			<div class="overflow-x-auto rounded-lg border border-border">
-				<div class="grid min-w-[760px] grid-cols-[1.1fr_.9fr_.9fr_1.8fr_.8fr] bg-white/[0.035] px-4 py-2 text-xs font-medium text-muted-foreground">
-					<div>{copy.name}</div>
-					<div>{copy.type}</div>
-					<div>{copy.iface}</div>
-					<div>{copy.config}</div>
-					<div>{copy.status}</div>
-				</div>
-				{#each upstreams as item}
-					<a
-						href={`/upstreams/${item.name}`}
-						class="grid min-w-[760px] grid-cols-[1.1fr_.9fr_.9fr_1.8fr_.8fr] items-center border-t border-border px-4 py-3 text-sm transition hover:bg-white/[0.04]"
+				<div class="overflow-x-auto rounded-lg border border-border">
+					<div
+						class="grid min-w-[760px] grid-cols-[1.1fr_.9fr_.9fr_1.8fr_.8fr] bg-white/[0.035] px-4 py-2 text-xs font-medium text-muted-foreground"
 					>
-						<div class="font-medium text-white">{item.name}</div>
-						<div class="text-muted-foreground">{item.type}</div>
-						<div class="font-mono text-xs text-white/80">{item.iface}</div>
-						<div class="truncate font-mono text-xs text-muted-foreground">{item.config}</div>
-						<div>
-							<span
-								class="rounded-full border border-border px-2 py-1 text-xs {item.status ===
-								'enabled'
-									? 'text-emerald-300'
-									: item.status === 'disabled'
-										? 'text-red-300'
-										: 'text-amber-300'}"
-							>
-								{item.status === 'enabled'
-									? copy.enabled
-									: item.status === 'disabled'
-										? copy.disabled
-										: copy.pending}
-							</span>
-						</div>
-					</a>
-				{/each}
-			</div>
+						<div>{copy.name}</div>
+						<div>{copy.type}</div>
+						<div>{copy.iface}</div>
+						<div>{copy.config}</div>
+						<div>{copy.status}</div>
+					</div>
+					{#each upstreams as item}
+						<a
+							href={`/upstreams/${item.name}`}
+							class="grid min-w-[760px] grid-cols-[1.1fr_.9fr_.9fr_1.8fr_.8fr] items-center border-t border-border px-4 py-3 text-sm transition hover:bg-white/[0.04]"
+						>
+							<div class="font-medium text-white">{item.name}</div>
+							<div class="text-muted-foreground">{item.type}</div>
+							<div class="font-mono text-xs text-white/80">{item.iface}</div>
+							<div class="truncate font-mono text-xs text-muted-foreground">
+								{item.config}
+							</div>
+							<div>
+								<span
+									class="rounded-full border border-border px-2 py-1 text-xs {item.status ===
+									'enabled'
+										? 'text-emerald-300'
+										: item.status === 'disabled'
+											? 'text-red-300'
+											: 'text-amber-300'}"
+								>
+									{item.status === 'enabled'
+										? copy.enabled
+										: item.status === 'disabled'
+											? copy.disabled
+											: copy.pending}
+								</span>
+							</div>
+						</a>
+					{/each}
+				</div>
 			{/if}
 		</Card.Content>
 	</Card.Root>

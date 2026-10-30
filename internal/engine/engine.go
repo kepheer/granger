@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"granger/internal/classifier"
 	"granger/internal/config"
 	"granger/internal/dns"
 	"granger/internal/driver"
@@ -24,29 +25,32 @@ type ApplyPlan struct {
 }
 
 type Engine struct {
-	Runner   runner.Runner
-	Registry *driver.Registry
+	Runner      runner.Runner
+	Registry    *driver.Registry
+	Classifiers *classifier.Registry
 }
 
 func New(r runner.Runner) Engine {
-	return Engine{Runner: r, Registry: driver.DefaultRegistry()}
+	return Engine{Runner: r, Registry: driver.DefaultRegistry(), Classifiers: classifier.DefaultRegistry(r)}
 }
 
 func NewWithRegistry(r runner.Runner, reg *driver.Registry) Engine {
-	return Engine{Runner: r, Registry: reg}
+	return Engine{Runner: r, Registry: reg, Classifiers: classifier.DefaultRegistry(r)}
 }
 
 func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
+	if err := e.ValidateConfig(cfg); err != nil {
+		return ApplyPlan{Results: []runner.Result{fail("Validate routing", err)}, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
+	}
 	cfg = e.effectiveConfig(cfg)
 	sniConfig := cfg
 	cfg = kernelDomainRules(cfg)
-	ctx := driver.BaseContext(cfg, e.Runner)
+	ctx := driver.BaseContext(sniConfig, e.Runner)
 	var res []runner.Result
-	res = append(res, e.prepareSNI(sniConfig)...)
-	if resultsOK(res) == false {
-		return ApplyPlan{Results: res, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
-	}
 	res = append(res, e.beginRoutingUpdate(cfg)...)
+	if resultsOK(res) {
+		res = append(res, e.prepareSNI(sniConfig)...)
+	}
 	if resultsOK(res) == false {
 		return ApplyPlan{Results: res, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
 	}
@@ -98,6 +102,7 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 			outCtx.OutputName = outName
 			outCtx.Output = out
 			outCtx.ClientCIDR = out.Subnet
+			outCtx.Config = cfg
 			res = append(res, d.ApplyFirewall(name, up, outCtx)...)
 		}
 	}
@@ -128,7 +133,7 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 	res = append(res, e.applyUserDefaultRoutes(cfg)...)
 	res = append(res, e.applySNICapture(sniConfig)...)
 	res = append(res, e.applyDNSCapture(cfg))
-	dnsRules := e.DNSRules(cfg, ctx)
+	dnsRules := e.DNSRules(sniConfig, ctx)
 	res = append(res, dns.New(e.Runner).Apply(cfg, dnsRules)...)
 	if resultsOK(res) {
 		res = append(res, e.finishRoutingUpdate())
@@ -360,6 +365,15 @@ func (e Engine) Runtime(cfg config.Config) []driver.RuntimeStatus {
 		}
 		out = append(out, d.Status(name, up, ctx))
 	}
+	if classifier.NeedsTransparent(cfg) {
+		backend, err := e.Classifiers.Find(cfg.Server.DomainRouterSettings().Backend)
+		if err != nil {
+			out = append(out, driver.RuntimeStatus{Name: "domain-router", Type: "classifier", State: driver.StateBroken, Summary: err.Error()})
+		}
+		if err == nil {
+			out = append(out, backend.Status(cfg))
+		}
+	}
 	return out
 }
 
@@ -406,4 +420,11 @@ func writeManagedRouteTables(tables []string) error {
 		return err
 	}
 	return os.Rename(file.Name(), filepath.Join(config.RuntimeDir, "route-tables"))
+}
+
+func (e Engine) PreviewConfig(cfg config.Config) ApplyPlan {
+	snapshot := e.effectiveConfig(cfg)
+	preview := NewWithRegistry(runner.NewDryRun(), e.Registry)
+	preview.Classifiers = classifier.DefaultRegistry(runner.NewDryRun())
+	return preview.ApplyConfig(snapshot)
 }

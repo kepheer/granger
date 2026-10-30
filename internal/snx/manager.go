@@ -49,6 +49,7 @@ type PendingStatus struct {
 	Result      *runner.Result `json:"result,omitempty"`
 	Pending     bool           `json:"pending"`
 	Step        string         `json:"step,omitempty"`
+	Secret      bool           `json:"secret"`
 	StepType    string         `json:"step_type,omitempty"`
 	Label       string         `json:"label,omitempty"`
 	Output      string         `json:"output,omitempty"`
@@ -162,13 +163,13 @@ func (m *Manager) start(parent context.Context, up config.Upstream, inputs map[s
 			return res
 		}
 	}
-	passwordStep := firstSecretInputStep(flow)
+	passwordStep := nextInputStep(flow, 0)
 	if passwordStep < 0 {
-		return runner.Result{Title: "Start SNX-RS auth", Command: "auth_flow", Output: "auth_flow must contain a secret input step", OK: false, Status: "error"}
+		return runner.Result{Title: "Start SNX-RS auth", Command: "auth_flow", Output: "auth_flow must contain an input step", OK: false, Status: "error"}
 	}
 	value := strings.TrimSpace(inputValue(inputs, flow[passwordStep]))
 	if value == "" {
-		return runner.Result{Title: "Start SNX-RS auth", Command: "snxctl connect", Output: "first secret value is empty", OK: false, Status: "error"}
+		return runner.Result{Title: "Start SNX-RS auth", Command: "snxctl connect", Output: "first input value is empty", OK: false, Status: "error"}
 	}
 	serviceCtx, serviceCancel := context.WithTimeout(parent, 5*time.Second)
 	service := exec.CommandContext(serviceCtx, "snxctl", "--config-file", up.Config, "status")
@@ -334,7 +335,7 @@ func (m *Manager) PendingStatus() PendingStatus {
 	step := m.pending.flow[m.pending.step]
 	return PendingStatus{
 		Busy: m.operation != nil, Result: m.lastResult,
-		Pending: true, Step: stepName(step), StepType: step.Type, Label: step.Label,
+		Pending: true, Step: stepName(step), StepType: step.Type, Label: step.Label, Secret: step.Secret || step.Type == "password",
 		Output: SanitizeOutput(m.pending.buf.String()), StartedUnix: m.pending.started.Unix(),
 	}
 }
@@ -537,4 +538,13 @@ func finishStatus(err error) string {
 		return "canceled"
 	}
 	return "error: " + err.Error()
+}
+
+func InitialStep(up config.Upstream) config.AuthStep {
+	flow := normalizeFlow(up.AuthFlow)
+	index := nextInputStep(flow, 0)
+	if index < 0 {
+		return config.AuthStep{}
+	}
+	return flow[index]
 }

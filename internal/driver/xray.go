@@ -89,7 +89,7 @@ func (d XrayUpstream) Status(name string, up config.Upstream, ctx ApplyContext) 
 
 func (XrayUpstream) ApplyRoutes(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
 	if up.Interface == "" {
-		return nil
+		return []runner.Result{{Title: "Validate Xray egress", OK: false, Status: "error", Output: "A kernel interface is required for routing"}}
 	}
 	return applyUpstreamRoutes(name, up, ctx)
 }

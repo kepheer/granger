@@ -122,7 +122,7 @@ func issueManagedUser(cfg *config.Config, userID string) error {
 		return err
 	}
 	out.Clients = append(out.Clients, client)
-	if err := renderOutput(user.Output, out, cfg.Server.PublicIP); err != nil {
+	if err := renderOutput(user.Output, RuntimeOutput(*cfg, out), cfg.Server.PublicIP); err != nil {
 		return err
 	}
 	cfg.Outputs[user.Output] = out

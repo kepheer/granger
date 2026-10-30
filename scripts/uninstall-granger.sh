@@ -13,8 +13,6 @@ fi
 
 systemctl disable --now granger.service 2>/dev/null || true
 systemctl disable --now granger-sni.service 2>/dev/null || true
-while ip rule del fwmark 0x80000000/0x80000000 table 19845 priority 100 2>/dev/null; do :; done
-ip route flush table 19845 2>/dev/null || true
 
 cleanup_linked_configs() {
   directory="$1"
@@ -43,18 +41,14 @@ cleanup_linked_configs /etc/amnezia/amneziawg awg-quick
 cleanup_linked_configs /etc/openvpn/server openvpn-server
 cleanup_linked_configs /etc/openvpn/client openvpn-client
 
-for unit in /etc/systemd/system/granger-*.socket /etc/systemd/system/granger-*.timer /etc/systemd/system/granger-*.service; do
+for unit in /etc/systemd/system/granger-sni.service /etc/systemd/system/granger-xray-*.service /etc/systemd/system/granger-sing-box-*.service; do
   [ -f "$unit" ] || continue
   systemctl disable --now "$(basename "$unit")" 2>/dev/null || true
   rm -f "$unit"
 done
 
-if command -v nft >/dev/null 2>&1; then
-  for handle in $(nft -a list chain inet host_security input 2>/dev/null | awk '/jump granger_control/ {print $NF}'); do
-    nft delete rule inet host_security input handle "$handle" 2>/dev/null || true
-  done
-  nft flush chain inet host_security granger_control 2>/dev/null || true
-  nft delete chain inet host_security granger_control 2>/dev/null || true
+if command -v granger >/dev/null 2>&1 && [ -f /etc/granger/granger.yaml ]; then
+  granger firewall-cleanup
 fi
 
 if command -v ip6tables >/dev/null 2>&1; then

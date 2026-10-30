@@ -22,7 +22,8 @@ type Result struct {
 }
 
 type Runner struct {
-	DryRun bool
+	DryRun  bool
+	Context context.Context
 }
 
 func New() Runner { return Runner{} }
@@ -33,9 +34,14 @@ func (r Runner) Run(title string, timeout time.Duration, stdin io.Reader, name s
 	if r.DryRun {
 		return Result{Title: title, Command: display(name, args...), Output: "(dry run: command not executed)", OK: true, Status: "dry-run"}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	base := r.Context
+	if base == nil {
+		base = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(base, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = 2 * time.Second
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}
@@ -106,3 +112,5 @@ func (b *SafeBuffer) String() string {
 	defer b.mu.Unlock()
 	return b.buf.String()
 }
+
+func (r Runner) WithContext(ctx context.Context) Runner { r.Context = ctx; return r }

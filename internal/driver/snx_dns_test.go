@@ -36,7 +36,7 @@ func TestSNXDomainRulesHaveTunnelDefaultRoute(t *testing.T) {
 
 func TestSNXDomainDNSUsesActiveSessionWithoutOverridingExplicitDNS(t *testing.T) {
 	dir := t.TempDir()
-	for name, body := range map[string]string{"ip": "#!/bin/sh\nexit 0\n", "snxctl": "#!/bin/sh\nprintf 'DNS servers: [192.0.2.53]\\n'\n"} {
+	for name, body := range map[string]string{"ip": "#!/bin/sh\nprintf '1: custom0 inet 192.0.2.2/32\\n'\n", "snxctl": "#!/bin/sh\nprintf 'DNS servers: [192.0.2.53]\\n'\n"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0700); err != nil {
 			t.Fatal(err)
 		}

@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { availableName, availableInterface, availablePort, availableSubnet, type ExistingConfig } from '$lib/config-suggestions';
+	import type { ModuleDescriptor } from '$lib/modules';
+	import {
+		availableName,
+		availableInterface,
+		availablePort,
+		availableSubnet,
+		type ExistingConfig
+	} from '$lib/config-suggestions';
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -9,8 +16,7 @@
 
 	const copy = {
 		title: 'Add entrypoint',
-		description:
-			'Choose how users connect to your server',
+		description: 'Choose how users connect to your server',
 		back: 'Back',
 		type: 'Protocol',
 		name: 'Name',
@@ -20,55 +26,33 @@
 		create: 'Create entrypoint'
 	} as const;
 
-	const protocols = [
-		{
-			type: 'wireguard',
-			label: 'WireGuard',
-			name: 'home_wg',
-			iface: 'wg1',
-			subnet: '10.66.66.0/24',
-			port: 51822
-		},
-		{
-			type: 'openvpn',
-			label: 'OpenVPN',
-			name: 'home_ovpn',
-			iface: 'tun0',
-			subnet: '10.77.0.0/24',
-			port: 1194
-		},
-		{
-			type: 'amneziawg',
-			label: 'AmneziaWG',
-			name: 'home_awg',
-			iface: 'awg0',
-			subnet: '10.88.0.0/24',
-			port: 51821
-		},
-		{
-			type: 'xray',
-			label: 'Xray',
-			name: 'home_xray',
-			iface: '',
-			subnet: '',
-			port: 8443
-		},
-		{
-			type: 'sing-box',
-			label: 'sing-box',
-			name: 'home_singbox',
-			iface: '',
-			subnet: '',
-			port: 8444
-		}
-	];
+	let protocols = $state<
+		Array<{
+			type: string;
+			label: string;
+			name: string;
+			iface: string;
+			subnet: string;
+			port: number;
+		}>
+	>([]);
+	const initial = {
+		type: '',
+		label: '',
+		name: '',
+		iface: '',
+		subnet: '',
+		port: 0
+	};
 
-	let selected = $state(protocols[0]);
-	let proxy = $derived(selected.type === 'xray' || selected.type === 'sing-box');
-	let name = $state(protocols[0].name);
-	let iface = $state(protocols[0].iface);
-	let subnet = $state(protocols[0].subnet);
-	let port = $state(protocols[0].port);
+	let selected = $state(initial);
+	let proxy = $derived(
+		selected.type === 'xray' || selected.type === 'sing-box'
+	);
+	let name = $state(initial.name);
+	let iface = $state(initial.iface);
+	let subnet = $state(initial.subnet);
+	let port = $state(initial.port);
 	let message = $state('');
 	let saving = $state(false);
 	let inlineConfig = $state('');
@@ -78,10 +62,36 @@
 	let installed = $state<string[]>([]);
 	onMount(async () => {
 		try {
-			const [response, configResponse] = await Promise.all([fetch('/api/protocols'), fetch('/api/config')]);
+			const [response, configResponse, modulesResponse] = await Promise.all([
+				fetch('/api/protocols'),
+				fetch('/api/config'),
+				fetch('/api/modules')
+			]);
+			const moduleBody = await modulesResponse.json();
+			if (modulesResponse.ok === false || moduleBody.ok !== true) {
+				throw new Error('Could not load connection types');
+			}
+			protocols = moduleBody.data
+				.filter((item: ModuleDescriptor) => item.entrypoint === true)
+				.map((item: ModuleDescriptor) => ({
+					type: item.id,
+					label: item.label,
+					name: item.id.replaceAll('-', '_'),
+					iface: item.interface,
+					subnet: item.subnet,
+					port: item.port
+				}));
+			const preferred =
+				protocols.find((item) => item.type === 'wireguard') ?? protocols[0];
+			if (preferred === undefined) {
+				throw new Error('No connection types available');
+			}
+			choose(preferred);
 			const configBody = await configResponse.json();
 			if (configResponse.ok === false || configBody.ok !== true) {
-				throw new Error(configBody.error ?? 'Could not load existing connections');
+				throw new Error(
+					configBody.error ?? 'Could not load existing connections'
+				);
 			}
 			existing = configBody.config;
 			const body = await response.json();
@@ -186,52 +196,60 @@
 			</div>
 			<div class="grid gap-3 md:grid-cols-2">
 				<label class="grid gap-1.5 text-xs text-muted-foreground"
-					>{copy.name}<Input bind:value={name} placeholder={selected.name} /></label
-				>
-				{#if proxy === false}
-				<label class="grid gap-1.5 text-xs text-muted-foreground"
-					>{copy.iface}<Input bind:value={iface} placeholder={selected.iface} /></label
-				>
-				<label class="grid gap-1.5 text-xs text-muted-foreground"
-					>{copy.subnet}<Input
-						bind:value={subnet}
-						placeholder={selected.subnet}
+					>{copy.name}<Input
+						bind:value={name}
+						placeholder={selected.name}
 					/></label
 				>
+				{#if proxy === false}
+					<label class="grid gap-1.5 text-xs text-muted-foreground"
+						>{copy.iface}<Input
+							bind:value={iface}
+							placeholder={selected.iface}
+						/></label
+					>
+					<label class="grid gap-1.5 text-xs text-muted-foreground"
+						>{copy.subnet}<Input
+							bind:value={subnet}
+							placeholder={selected.subnet}
+						/></label
+					>
 				{/if}
 				<label class="grid gap-1.5 text-xs text-muted-foreground"
 					>{copy.port}<Input
 						bind:value={port}
 						type="number"
-						min="1" max="65535"
+						min="1"
+						max="65535"
 					/></label
 				>
 			</div>
-			<p class="text-xs text-muted-foreground">Granger generates the server config and user profiles</p>
+			<p class="text-xs text-muted-foreground">
+				Granger generates the server config and user profiles
+			</p>
 			{#if selected.type !== 'wireguard'}
 				<details class="rounded-md border border-border p-3">
-					<summary class="cursor-pointer text-sm">Use an existing config</summary>
+					<summary class="cursor-pointer text-sm"
+						>Use an existing config</summary
+					>
 					<div class="mt-4 space-y-4">
-				<label class="grid gap-1.5 text-xs text-muted-foreground"
-					>Server config (optional)<Textarea
-						bind:value={inlineConfig}
-						class="min-h-48 font-mono text-xs"
-					/></label
-				>
-				{#if inlineConfig.trim() !== ''}<label
-						class="grid gap-1.5 text-xs text-muted-foreground"
-						>Systemd service (optional)<Input
-							bind:value={service}
-						/></label
-					>{/if}
+						<label class="grid gap-1.5 text-xs text-muted-foreground"
+							>Server config (optional)<Textarea
+								bind:value={inlineConfig}
+								class="min-h-48 font-mono text-xs"
+							/></label
+						>
+						{#if inlineConfig.trim() !== ''}<label
+								class="grid gap-1.5 text-xs text-muted-foreground"
+								>Systemd service (optional)<Input bind:value={service} /></label
+							>{/if}
 					</div>
 				</details>
 			{/if}
 			{#if protocolStatusLoaded && installed.includes(selected.type) === false}
 				<p class="text-sm text-muted-foreground">
-					Install the driver to continue <a
-						class="underline"
-						href="/upstreams">View drivers</a
+					Install the driver to continue <a class="underline" href="/upstreams"
+						>View drivers</a
 					>
 				</p>
 			{/if}
@@ -239,7 +257,9 @@
 					{message}
 				</p>{/if}
 			<Button
-				disabled={saving || protocolStatusLoaded === false || installed.includes(selected.type) === false}
+				disabled={saving ||
+					protocolStatusLoaded === false ||
+					installed.includes(selected.type) === false}
 				onclick={create}><PlusIcon />{copy.create}</Button
 			>
 		</Card.Content>

@@ -11,8 +11,13 @@ import (
 )
 
 func renderHostControlAccess(cfg config.Config) string {
+	if cfg.Server.HostFirewall == nil {
+		return ""
+	}
+	fw := cfg.Server.HostFirewall
+	target := fw.Family + " " + fw.Table + " " + fw.AccessChain
 	var body strings.Builder
-	body.WriteString("flush chain inet host_security granger_control\n")
+	body.WriteString("flush chain " + target + "\n")
 	for _, name := range sortedOutputNames(cfg) {
 		out := cfg.Outputs[name]
 		if out.IsEnabled() == false || out.Interface == "" || out.ServerIP == "" {
@@ -37,14 +42,23 @@ func renderHostControlAccess(cfg config.Config) string {
 				continue
 			}
 			if hasSNIRules(cfg) && routedSNIOutput(out) {
-				fmt.Fprintf(&body, "add rule inet host_security granger_control iifname %q ip saddr %s meta mark & 0x80000000 == 0x80000000 tcp dport { 80, 443 } accept\n", out.Interface, source.String())
-				fmt.Fprintf(&body, "add rule inet host_security granger_control iifname %q ip saddr %s meta mark & 0x80000000 == 0x80000000 udp dport 443 accept\n", out.Interface, source.String())
+				settings := cfg.Server.DomainRouterSettings()
+				for _, transport := range []struct {
+					protocol string
+					ports    []int
+				}{{"tcp", settings.TCPPorts}, {"udp", settings.UDPPorts}} {
+					if len(transport.ports) == 0 {
+						continue
+					}
+					fmt.Fprintf(&body, "add rule %s iifname %q ip saddr %s meta mark & 0x80000000 == 0x80000000 %s dport { %s } accept\n", target, out.Interface, source.String(), transport.protocol, config.PortList(transport.ports, ", "))
+				}
 			}
+
 			for _, protocol := range []string{"tcp", "udp"} {
-				fmt.Fprintf(&body, "add rule inet host_security granger_control iifname %q ip saddr %s ip daddr %s %s dport 53 accept\n", out.Interface, source.String(), destination.String(), protocol)
+				fmt.Fprintf(&body, "add rule %s iifname %q ip saddr %s ip daddr %s %s dport 53 accept\n", target, out.Interface, source.String(), destination.String(), protocol)
 			}
 			for _, address := range cfg.GUIVPNAddresses() {
-				fmt.Fprintf(&body, "add rule inet host_security granger_control iifname %q ip saddr %s ip daddr %s tcp dport %d accept\n", out.Interface, source.String(), address, cfg.Server.GUIVPNPort)
+				fmt.Fprintf(&body, "add rule %s iifname %q ip saddr %s ip daddr %s tcp dport %d accept\n", target, out.Interface, source.String(), address, cfg.Server.GUIVPNPort)
 			}
 		}
 	}
@@ -52,14 +66,27 @@ func renderHostControlAccess(cfg config.Config) string {
 }
 
 func (e Engine) applyHostControlAccess(cfg config.Config) runner.Result {
-	script := `if nft list chain inet host_security input >/dev/null 2>&1; then
- nft list chain inet host_security granger_control >/dev/null 2>&1 || nft add chain inet host_security granger_control
- if nft list chain inet host_security input | grep -q 'jump granger_control'; then
-  :
- else
-  nft insert rule inet host_security input jump granger_control
- fi
- nft -f -
-fi`
+	if cfg.Server.HostFirewall == nil {
+		return runner.Result{Title: "Host firewall integration", OK: true, Status: "disabled", Output: "No host firewall adapter configured"}
+	}
+	fw := cfg.Server.HostFirewall
+	table := fw.Family + " " + fw.Table
+	input := table + " " + fw.InputChain
+	access := table + " " + fw.AccessChain
+	script := "set -e\nnft list chain " + input + " >/dev/null\n" +
+		"nft list chain " + access + " >/dev/null 2>&1 || nft add chain " + access + "\n" +
+		"nft list chain " + input + " | grep -q 'jump " + fw.AccessChain + "' || nft insert rule " + input + " jump " + fw.AccessChain + "\nnft -f -"
 	return e.Runner.Run("Update host control access", 15*time.Second, strings.NewReader(renderHostControlAccess(cfg)), "sh", "-c", script)
+}
+
+func (e Engine) RemoveHostControlAccess(cfg config.Config) []runner.Result {
+	fw := cfg.Server.HostFirewall
+	if fw == nil {
+		return nil
+	}
+	table := fw.Family + " " + fw.Table
+	script := "set -e\nif nft list chain " + table + " " + fw.InputChain + " >/dev/null 2>&1; then\n" +
+		"for handle in $(nft -a list chain " + table + " " + fw.InputChain + " | awk '/jump " + fw.AccessChain + " / {print $NF}'); do nft delete rule " + table + " " + fw.InputChain + " handle \"$handle\"; done\nfi\n" +
+		"if nft list chain " + table + " " + fw.AccessChain + " >/dev/null 2>&1; then nft flush chain " + table + " " + fw.AccessChain + "; nft delete chain " + table + " " + fw.AccessChain + "; fi"
+	return []runner.Result{e.Runner.Run("Remove host firewall integration", 15*time.Second, nil, "sh", "-c", script)}
 }

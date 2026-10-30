@@ -15,3 +15,11 @@ func (a apiServer) applyReplacement(previous, next config.Config) []runner.Resul
 	plan := a.engine.ReconcileConfig(previous, next)
 	return plan.Results
 }
+
+func (a apiServer) applyPending(next config.Config) []runner.Result {
+	previous, err := loadConfig()
+	if err != nil {
+		return []runner.Result{{Title: "Load applied configuration", OK: false, Status: "error", Output: err.Error()}}
+	}
+	return a.applyReplacement(previous, next)
+}

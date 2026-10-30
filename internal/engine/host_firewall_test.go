@@ -15,6 +15,7 @@ func TestHostControlAccessDoesNotAllowRevokedClients(t *testing.T) {
 			{User: "active", IP: "10.19.84.5/32", Disabled: true},
 		}},
 	}}
+	cfg.Server.HostFirewall = &config.HostFirewall{Family: "inet", Table: "test_table", InputChain: "input", AccessChain: "access"}
 	body := renderHostControlAccess(cfg)
 	if strings.Contains(body, `iifname "awg0" ip saddr 10.19.84.2 ip daddr 10.19.84.1 tcp dport 80 accept`) == false {
 		t.Fatal("GUI not allowed for active user")
@@ -35,6 +36,7 @@ func TestHostSNIAllowsOnlyMarkedWebTrafficFromActiveVPNClients(t *testing.T) {
 	out := cfg.Outputs["vpn"]
 	out.ServerIP = "10.19.84.51"
 	cfg.Outputs["vpn"] = out
+	cfg.Server.HostFirewall = &config.HostFirewall{Family: "inet", Table: "test_table", InputChain: "input", AccessChain: "access"}
 	body := renderHostControlAccess(cfg)
 	if strings.Contains(body, `iifname "awg-test" ip saddr 10.19.84.2 meta mark & 0x80000000 == 0x80000000 tcp dport { 80, 443 } accept`) == false {
 		t.Fatal("active transparent web traffic was not allowed")

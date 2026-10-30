@@ -11,6 +11,9 @@ import (
 )
 
 func (e Engine) RestoreConfig(cfg config.Config) ApplyPlan {
+	if err := e.ValidateConfig(cfg); err != nil {
+		return ApplyPlan{Results: []runner.Result{fail("Validate routing", err)}, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
+	}
 	ctx := driver.BaseContext(cfg, e.Runner)
 	var results []runner.Result
 	results = append(results, e.beginRoutingUpdate(cfg)...)
@@ -38,10 +41,13 @@ func (e Engine) RestoreConfig(cfg config.Config) ApplyPlan {
 		}
 
 		if out.Managed && e.Runner.DryRun == false {
+			originalClients := out.Clients
+			out = provision.RuntimeOutput(cfg, out)
 			if err := provision.EnsureOutput(name, &out, cfg.Server.PublicIP); err != nil {
 				results = append(results, fail("Regenerate managed output "+name, err))
 				continue
 			}
+			out.Clients = originalClients
 			cfg.Outputs[name] = out
 			outCtx.Output = out
 		}
@@ -142,7 +148,15 @@ func (e Engine) UpdateClients(name, userID string, cfg config.Config) []runner.R
 	}
 	if out.Type == "openvpn" && out.Managed {
 		user, exists := cfg.Users[userID]
-		return driver.UpdateOpenVPNClients(name, userID, exists == false || user.Disabled, ctx)
+		revoked := exists == false || user.Disabled
+		found := false
+		for _, client := range out.Clients {
+			if client.User == userID {
+				found = true
+				revoked = revoked || cfg.ClientEnabled(client) == false
+			}
+		}
+		return driver.UpdateOpenVPNClients(name, userID, revoked || found == false, ctx)
 	}
 	return e.RestartOutput(name, cfg)
 }

@@ -16,7 +16,7 @@ type SNXRSUpstream struct{}
 func (SNXRSUpstream) Type() string        { return "snx-rs" }
 func (SNXRSUpstream) DisplayName() string { return "SNX-RS" }
 func (SNXRSUpstream) Capabilities() []Capability {
-	return []Capability{CapInteractive, CapDomainRoute, CapCIDRRoute}
+	return []Capability{CapInteractive, CapDefaultRoute, CapDomainRoute, CapCIDRRoute}
 }
 
 func (SNXRSUpstream) NormalizeConfig(name string, up config.Upstream, _ ApplyContext) []runner.Result {
@@ -50,7 +50,7 @@ func (d SNXRSUpstream) Status(name string, up config.Upstream, ctx ApplyContext)
 	if !up.IsEnabled() {
 		return RuntimeStatus{Name: name, Type: d.Type(), State: StatePending, Summary: "SNX-RS upstream is disabled", Interface: up.Interface, Service: snxRSService(up.Service), Capabilities: d.Capabilities()}
 	}
-	res := ctx.Runner.Run("Status SNX-RS "+name, 5*time.Second, nil, "ip", "-br", "addr", "show", up.Interface)
+	res := ctx.Runner.Run("Status SNX-RS "+name, 5*time.Second, nil, "sh", "-c", "systemctl is-active --quiet "+netfilter.ShellQuote(snxRSService(up.Service))+" && ip -4 -o addr show dev "+netfilter.ShellQuote(up.Interface)+" up | grep -q ' inet '")
 	st := RuntimeStatus{Name: name, Type: d.Type(), Interface: up.Interface, Service: snxRSService(up.Service), Capabilities: d.Capabilities(), Results: []runner.Result{res}}
 	if res.OK {
 		st.State = StateHealthy
@@ -175,7 +175,7 @@ func snxInterfaceUp(up config.Upstream, ctx ApplyContext) bool {
 	if strings.TrimSpace(up.Interface) == "" {
 		return false
 	}
-	return ctx.Runner.Run("Status SNX-RS interface "+up.Interface, 3*time.Second, nil, "ip", "link", "show", up.Interface).OK
+	return ctx.Runner.Run("Status SNX-RS interface "+up.Interface, 3*time.Second, nil, "sh", "-c", "ip -4 -o addr show dev "+netfilter.ShellQuote(up.Interface)+" up | grep -q ' inet '").OK
 }
 
 func snxIPv4(up config.Upstream, ctx ApplyContext) string {

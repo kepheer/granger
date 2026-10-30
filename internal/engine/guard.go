@@ -38,23 +38,7 @@ func (e Engine) finishRoutingUpdate() runner.Result {
 }
 
 func personalDefault(cfg config.Config, userID string) string {
-	user, ok := cfg.Users[userID]
-	if userID != "" && (ok == false || user.Disabled) {
-		return ""
-	}
-	target := user.DefaultUpstream
-	if target == "" {
-		for _, rule := range cfg.Rules {
-			if rule.Default {
-				target = rule.Via
-				break
-			}
-		}
-	}
-	if _, exists := cfg.Upstreams[target]; exists == false || cfg.UserCanUseUpstream(userID, target) == false {
-		return ""
-	}
-	return target
+	return cfg.PersonalDefault(userID)
 }
 
 func (e Engine) applyPersonalFallback(cfg config.Config) []runner.Result {

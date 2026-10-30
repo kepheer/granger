@@ -7,6 +7,7 @@
 	import UpstreamSelect from '$lib/components/upstream-select.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import * as Sheet from '$lib/components/ui/sheet';
+	import * as Select from '$lib/components/ui/select';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import QRCode from 'qrcode';
@@ -22,8 +23,7 @@
 
 	const copy = {
 		title: 'Entrypoints',
-		description:
-			'Manage user connections, profiles and access',
+		description: 'Manage user connections, profiles and access',
 		add: 'Add entrypoint',
 		name: 'Profile ID',
 		type: 'Type',
@@ -64,6 +64,7 @@
 	let message = $state('');
 	let accessSaving = $state(false);
 	type UserAccess = {
+		disabled?: boolean;
 		access_restricted?: boolean;
 		allowed_upstreams?: string[];
 		default_upstream?: string;
@@ -82,6 +83,11 @@
 
 	let createOpen = $state(false);
 	let createOutput = $state('');
+	let existingUser = $state('');
+	let profileUserTrigger = $state<HTMLButtonElement | null>(null);
+	const profileUserPortal = $derived(
+		profileUserTrigger?.closest('[role="dialog"]') ?? undefined
+	);
 	let createError = $state('');
 	let createNameError = $state('');
 	let createSuccess = $state('');
@@ -92,6 +98,7 @@
 
 	function openCreateUser(output: string, trigger: HTMLElement) {
 		createOutput = output;
+		existingUser = '';
 		createTrigger = trigger;
 		if (busy === '') {
 			createError = '';
@@ -190,7 +197,7 @@
 		}
 
 		const displayName = (userNames[output] ?? '').trim();
-		if (displayName === '') {
+		if (displayName === '' && existingUser === '') {
 			createNameError = 'Enter a user name';
 			await tick();
 			createNameInput?.focus();
@@ -203,20 +210,29 @@
 		await tick();
 		createProgress?.focus();
 		try {
-			const response = await fetch('/api/users', {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-					'x-granger-request': '1'
-				},
-				body: JSON.stringify({
-					display_name: displayName,
-					output,
-					access_restricted: true,
-					allowed_upstreams: createAllowed(output),
-					default_upstream: defaultByOutput[output] ?? ''
-				})
-			});
+			const response = await fetch(
+				existingUser === ''
+					? '/api/users'
+					: `/api/users/${encodeURIComponent(existingUser)}/profiles`,
+				{
+					method: 'POST',
+					headers: {
+						'content-type': 'application/json',
+						'x-granger-request': '1'
+					},
+					body: JSON.stringify(
+						existingUser !== ''
+							? { output }
+							: {
+									display_name: displayName,
+									output,
+									access_restricted: true,
+									allowed_upstreams: createAllowed(output),
+									default_upstream: defaultByOutput[output] ?? ''
+								}
+					)
+				}
+			);
 			const body = await response.json();
 			if (response.ok === false || body.ok !== true) {
 				const failed = body.results?.find(
@@ -227,7 +243,8 @@
 				);
 			}
 			createOpen = false;
-			createSuccess = `User ${displayName} created`;
+			createSuccess =
+				existingUser === '' ? `User ${displayName} created` : 'Profile created';
 			userNames[output] = '';
 			await loadEntrypoints();
 		} catch (error) {
@@ -297,7 +314,13 @@
 		}
 	}
 
-	async function toggleProfile(user: string, disabled: boolean, trigger: HTMLButtonElement | null) {
+	async function toggleProfile(
+		output: string,
+		client: string,
+		user: string,
+		disabled: boolean,
+		trigger: HTMLButtonElement | null
+	) {
 		if (profileBusy !== '') {
 			return;
 		}
@@ -305,14 +328,17 @@
 		profileBusy = user;
 		message = '';
 		try {
-			const response = await fetch(`/api/users/${encodeURIComponent(user)}`, {
-				method: 'PUT',
-				headers: {
-					'content-type': 'application/json',
-					'x-granger-request': '1'
-				},
-				body: JSON.stringify({ disabled })
-			});
+			const response = await fetch(
+				`/api/profiles/${encodeURIComponent(output)}/${encodeURIComponent(client)}`,
+				{
+					method: 'PUT',
+					headers: {
+						'content-type': 'application/json',
+						'x-granger-request': '1'
+					},
+					body: JSON.stringify({ disabled })
+				}
+			);
 			const body = await response.json();
 			if (response.ok === false || body.ok !== true) {
 				const failure = body.results?.find(
@@ -546,9 +572,16 @@
 													variant="ghost"
 													aria-label={`More actions for ${client.displayName}`}
 													bind:ref={
-													() => actionTriggers[`${entrypoint.name}/${client.name}`] ?? null,
-													(value) => { actionTriggers[`${entrypoint.name}/${client.name}`] = value; }
-												}
+														() =>
+															actionTriggers[
+																`${entrypoint.name}/${client.name}`
+															] ?? null,
+														(value) => {
+															actionTriggers[
+																`${entrypoint.name}/${client.name}`
+															] = value;
+														}
+													}
 												>
 													<DotsThreeIcon weight="bold" aria-hidden="true" />
 												</Button>
@@ -563,7 +596,13 @@
 											}}
 										>
 											<DropdownMenu.Item
-												onSelect={() => editAccess(client.user, actionTriggers[`${entrypoint.name}/${client.name}`] ?? null)}
+												onSelect={() =>
+													editAccess(
+														client.user,
+														actionTriggers[
+															`${entrypoint.name}/${client.name}`
+														] ?? null
+													)}
 											>
 												<ShieldCheckIcon aria-hidden="true" />Manage access
 											</DropdownMenu.Item>
@@ -576,9 +615,13 @@
 													: 'default'}
 												onSelect={() =>
 													toggleProfile(
+														entrypoint.name,
+														client.name,
 														client.user,
 														client.status === 'enabled',
-														actionTriggers[`${entrypoint.name}/${client.name}`] ?? null
+														actionTriggers[
+															`${entrypoint.name}/${client.name}`
+														] ?? null
 													)}
 											>
 												<PowerIcon aria-hidden="true" />{client.status ===
@@ -615,10 +658,10 @@
 		}}
 	>
 		<Sheet.Header class="pr-12">
-			<Sheet.Title>Create user</Sheet.Title>
-			<Sheet.Description
-				>New user on {createOutput}</Sheet.Description
+			<Sheet.Title
+				>{existingUser === '' ? 'Create user' : 'Create profile'}</Sheet.Title
 			>
+			<Sheet.Description>New user on {createOutput}</Sheet.Description>
 		</Sheet.Header>
 		{#if createOutput !== ''}
 			<form
@@ -642,91 +685,132 @@
 						</p>
 					{/if}
 					<div class="grid gap-2">
-						<Label for="create-user-name"
-							>User name <span class="text-muted-foreground">(required)</span
-							></Label
-						>
-						<Input
-							id="create-user-name"
-							class="border-muted-foreground/70"
-							name="display_name"
-							bind:ref={createNameInput}
-							bind:value={userNames[createOutput]}
-							required
-							autocomplete="off"
-							disabled={busy === createOutput}
-							aria-invalid={createNameError !== '' ? true : undefined}
-							aria-describedby={createNameError !== ''
-								? 'create-user-name-error'
-								: undefined}
-							oninput={() => {
-								createNameError = '';
+						<Label for="create-profile-user">User</Label>
+						<Select.Root
+							type="single"
+							value={existingUser || '__new__'}
+							onValueChange={(value) => {
+								existingUser = value === '__new__' ? '' : value;
 							}}
-						/>
-						{#if createNameError}<p
-								id="create-user-name-error"
-								role="alert"
-								class="text-sm text-red-300"
-							>
-								{createNameError}
-							</p>{/if}
-					</div>
-					<fieldset
-						disabled={busy === createOutput}
-						aria-describedby="create-upstream-help"
-						class="space-y-2"
-					>
-						<legend class="mb-2 text-sm font-medium">Allowed upstreams</legend>
-						<p
-							id="create-upstream-help"
-							class="mb-3 text-sm text-muted-foreground"
 						>
-							Choose the connections this user can use
-						</p>
-						{#each upstreamNames as upstream}
-							<div
-								class="flex min-h-11 items-center gap-3 rounded-lg border border-border px-3"
+							<Select.Trigger
+								bind:ref={profileUserTrigger}
+								id="create-profile-user"
+								class="w-full"
+								><span
+									>{existingUser === ''
+										? 'New user'
+										: users[existingUser]?.display_name || existingUser}</span
+								></Select.Trigger
 							>
-								<Checkbox
-									id={`new-user-${upstream}`}
-									class="size-6 border-muted-foreground/70"
-									checked={createAllowed(createOutput).includes(upstream)}
-									disabled={busy === createOutput}
-									onCheckedChange={(checked) =>
-										changeCreateAllowed(createOutput, upstream, checked)}
-								/>
-								<Label
-									for={`new-user-${upstream}`}
-									class="flex min-h-11 flex-1 cursor-pointer items-center"
-									>{upstream}</Label
+							<Select.Content
+								><Select.Item value="__new__">New user</Select.Item>
+								{#each Object.entries(users) as [id, user]}
+									{#if user.disabled !== true && entrypoints
+											.find((item) => item.name === createOutput)
+											?.clients.some((client) => client.user === id) === false}
+										<Select.Item value={id}
+											>{user.display_name || id}</Select.Item
+										>
+									{/if}
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</div>
+					{#if existingUser === ''}
+						<div class="grid gap-2">
+							<Label for="create-user-name"
+								>User name <span class="text-muted-foreground">(required)</span
+								></Label
+							>
+							<Input
+								id="create-user-name"
+								class="border-muted-foreground/70"
+								name="display_name"
+								bind:ref={createNameInput}
+								bind:value={userNames[createOutput]}
+								required
+								autocomplete="off"
+								disabled={busy === createOutput}
+								aria-invalid={createNameError !== '' ? true : undefined}
+								aria-describedby={createNameError !== ''
+									? 'create-user-name-error'
+									: undefined}
+								oninput={() => {
+									createNameError = '';
+								}}
+							/>
+							{#if createNameError}<p
+									id="create-user-name-error"
+									role="alert"
+									class="text-sm text-red-300"
 								>
-							</div>
-						{/each}
-						{#if upstreamNames.length === 0}<p
-								class="text-sm text-muted-foreground"
-							>
-								No upstreams yet
-							</p>{/if}
-					</fieldset>
-					<div class="grid gap-2">
-						<Label for="create-user-default">Default route</Label>
-						<UpstreamSelect
-							id="create-user-default"
-							class="border-muted-foreground/70"
-							options={createAllowed(createOutput)}
-							bind:value={defaultByOutput[createOutput]}
+									{createNameError}
+								</p>{/if}
+						</div>
+					{/if}
+					{#if existingUser === ''}
+						<fieldset
 							disabled={busy === createOutput}
-							aria-describedby="create-default-help"
-						/>
-						<p id="create-default-help" class="text-sm text-muted-foreground">
-							Unavailable or restricted routes use this default. Traffic is blocked if no allowed default is available
-						</p>
-					</div>
-					{#if createAllowed(createOutput).length === 0}<p
-							role="status"
-							class="text-sm text-amber-200"
+							aria-describedby="create-upstream-help"
+							class="space-y-2"
 						>
-							Select at least one upstream to allow network access
+							<legend class="mb-2 text-sm font-medium">Allowed upstreams</legend
+							>
+							<p
+								id="create-upstream-help"
+								class="mb-3 text-sm text-muted-foreground"
+							>
+								Choose the connections this user can use
+							</p>
+							{#each upstreamNames as upstream}
+								<div
+									class="flex min-h-11 items-center gap-3 rounded-lg border border-border px-3"
+								>
+									<Checkbox
+										id={`new-user-${upstream}`}
+										class="size-6 border-muted-foreground/70"
+										checked={createAllowed(createOutput).includes(upstream)}
+										disabled={busy === createOutput}
+										onCheckedChange={(checked) =>
+											changeCreateAllowed(createOutput, upstream, checked)}
+									/>
+									<Label
+										for={`new-user-${upstream}`}
+										class="flex min-h-11 flex-1 cursor-pointer items-center"
+										>{upstream}</Label
+									>
+								</div>
+							{/each}
+							{#if upstreamNames.length === 0}<p
+									class="text-sm text-muted-foreground"
+								>
+									No upstreams yet
+								</p>{/if}
+						</fieldset>
+						<div class="grid gap-2">
+							<Label for="create-user-default">Default route</Label>
+							<UpstreamSelect
+								id="create-user-default"
+								class="border-muted-foreground/70"
+								options={createAllowed(createOutput)}
+								bind:value={defaultByOutput[createOutput]}
+								disabled={busy === createOutput}
+								aria-describedby="create-default-help"
+							/>
+							<p id="create-default-help" class="text-sm text-muted-foreground">
+								Unavailable or restricted routes use this default; traffic is
+								blocked if no allowed default is available
+							</p>
+						</div>
+						{#if createAllowed(createOutput).length === 0}<p
+								role="status"
+								class="text-sm text-amber-200"
+							>
+								Select at least one upstream to allow network access
+							</p>{/if}
+					{:else}<p class="text-sm text-muted-foreground">
+							This profile uses the user's existing access
 						</p>{/if}
 					{#if busy === createOutput}<p
 							bind:this={createProgress}
@@ -734,7 +818,7 @@
 							role="status"
 							class="text-sm text-muted-foreground"
 						>
-							Creating user… You can close this panel while it finishes
+							Creating profile…
 						</p>{/if}
 				</div>
 				<div
@@ -750,7 +834,9 @@
 					<Button type="submit" disabled={busy !== ''}
 						>{busy === createOutput
 							? 'Creating…'
-							: 'Create user and config'}</Button
+							: existingUser === ''
+								? 'Create user and config'
+								: 'Create profile'}</Button
 					>
 				</div>
 			</form>
@@ -777,10 +863,13 @@
 </Sheet.Root>
 
 <Sheet.Root bind:open={accessOpen}>
-	<Sheet.Content class="w-full sm:max-w-md" onCloseAutoFocus={(event) => {
-		event.preventDefault();
-		accessTrigger?.focus();
-	}}>
+	<Sheet.Content
+		class="w-full sm:max-w-md"
+		onCloseAutoFocus={(event) => {
+			event.preventDefault();
+			accessTrigger?.focus();
+		}}
+	>
 		<Sheet.Header
 			><Sheet.Title>User access</Sheet.Title><Sheet.Description
 				>{users[accessUser]?.display_name ?? accessUser}</Sheet.Description
@@ -815,7 +904,9 @@
 					{message}
 				</p>{/if}
 			<p class="mt-4 text-xs text-muted-foreground">
-				Restricted routes use the allowed default. Traffic is blocked if no allowed default is available. Uncheck all upstreams to block network access
+				Restricted routes use the allowed default. Traffic is blocked if no
+				allowed default is available. Uncheck all upstreams to block network
+				access
 			</p>
 			<Button disabled={accessSaving} class="mt-6" onclick={saveAccess}
 				>Save access</Button

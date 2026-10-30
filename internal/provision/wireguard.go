@@ -307,7 +307,7 @@ PersistentKeepalive = 25
 	cfg.Outputs[user.Output] = out
 	user.Client = userID
 	cfg.Users[userID] = user
-	return renderOutput(user.Output, out, cfg.Server.PublicIP)
+	return renderOutput(user.Output, RuntimeOutput(*cfg, out), cfg.Server.PublicIP)
 }
 
 func RevokeUser(cfg *config.Config, userID string) error {
@@ -315,27 +315,23 @@ func RevokeUser(cfg *config.Config, userID string) error {
 }
 
 func SetUserDisabled(cfg *config.Config, userID string, disabled bool) error {
-	user, ok := cfg.Users[userID]
-	if !ok || user.Output == "" {
+	user, exists := cfg.Users[userID]
+	if exists == false {
 		return nil
 	}
-	out, ok := cfg.Outputs[user.Output]
-	if !ok {
-		return nil
-	}
-	if out.Type == "wireguard" || out.Type == "amneziawg" {
-		if err := adoptLegacyQuickOutput(user.Output, &out, defaultQuickPaths()); err != nil {
-			return err
+	user.Disabled = disabled
+	cfg.Users[userID] = user
+	for name, out := range cfg.Outputs {
+		for _, client := range out.Clients {
+			if client.User == userID {
+				if err := RenderProfiles(*cfg, name); err != nil {
+					return err
+				}
+				break
+			}
 		}
 	}
-	out.Clients = append([]config.Client(nil), out.Clients...)
-	for index := range out.Clients {
-		if out.Clients[index].User == userID {
-			out.Clients[index].Disabled = disabled
-		}
-	}
-	cfg.Outputs[user.Output] = out
-	return renderOutput(user.Output, out, cfg.Server.PublicIP)
+	return nil
 }
 
 func RenderWireGuardServer(name string, out config.Output) error {

@@ -27,6 +27,7 @@
 	type Pending = {
 		pending: boolean;
 		busy?: boolean;
+		secret?: boolean;
 		result?: { OK: boolean; Output: string; Status: string };
 		step?: string;
 		step_type?: string;
@@ -59,6 +60,12 @@
 	let pending = $state<Pending>({ pending: false });
 	let username = $state('');
 	let password = $state('');
+	let initialStep = $state({
+		name: 'password',
+		type: 'password',
+		label: 'Password',
+		secret: true
+	});
 	let value = $state('');
 	let stepInput = $state<HTMLInputElement | null>(null);
 	let usernameInput = $state<HTMLInputElement | null>(null);
@@ -136,6 +143,7 @@
 					await api(`/api/snx/${encodeURIComponent(name)}/status`)
 				).data;
 				await updatePending(status);
+				initialStep = status.initial_step ?? initialStep;
 				configReady = status.config_ready === true;
 				driverInstalled = status.driver_installed === true;
 				configError = status.config_error ?? '';
@@ -481,7 +489,7 @@
 						>{pending.label || pending.step_type || copy.value}<Input
 							bind:ref={stepInput}
 							bind:value
-							type="password"
+							type={pending.secret === false ? 'text' : 'password'}
 							autocomplete="one-time-code"
 						/></label
 					>
@@ -510,10 +518,12 @@
 							/></label
 						>
 						<label class="grid gap-1.5 text-xs text-muted-foreground"
-							>{copy.password}<Input
+							>{initialStep.label || initialStep.type}<Input
 								disabled={canSignIn === false || authenticating}
 								bind:value={password}
-								type="password"
+								type={initialStep.secret || initialStep.type === 'password'
+									? 'password'
+									: 'text'}
 								autocomplete="current-password"
 							/></label
 						>
@@ -523,10 +533,12 @@
 							disabled={authenticating ||
 								canSignIn === false ||
 								savingConfig ||
-								username.trim() === '' ||
 								password === ''}
-							onclick={() => snx('start', { username, password })}
-							><PowerIcon />{copy.start}</Button
+							onclick={() =>
+								snx('start', {
+									username,
+									[initialStep.name || initialStep.type]: password
+								})}><PowerIcon />{copy.start}</Button
 						>
 						<Button
 							disabled={authenticating}

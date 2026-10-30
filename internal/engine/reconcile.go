@@ -10,9 +10,13 @@ import (
 	"granger/internal/driver"
 	"granger/internal/provision"
 	"granger/pkg/netfilter"
+	"granger/pkg/runner"
 )
 
 func (e Engine) ReconcileConfig(previous, next config.Config) ApplyPlan {
+	if err := e.ValidateConfig(next); err != nil {
+		return ApplyPlan{Results: []runner.Result{fail("Validate routing", err)}, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
+	}
 	ctx := driver.BaseContext(next, e.Runner)
 	previousCtx := driver.BaseContext(previous, e.Runner)
 	results := e.beginRoutingUpdate(previous)
@@ -67,10 +71,13 @@ func (e Engine) ReconcileConfig(previous, next config.Config) ApplyPlan {
 			continue
 		}
 		if out.Managed && e.Runner.DryRun == false {
+			originalClients := out.Clients
+			out = provision.RuntimeOutput(next, out)
 			if err := provision.EnsureOutput(name, &out, next.Server.PublicIP); err != nil {
 				results = append(results, fail("Regenerate managed output "+name, err))
 				continue
 			}
+			out.Clients = originalClients
 			next.Outputs[name] = out
 		}
 		if out.Managed == false || e.Runner.DryRun == false {
@@ -114,6 +121,15 @@ func (e Engine) ReconcileConfig(previous, next config.Config) ApplyPlan {
 
 	if resultsOK(results) == false {
 		return ApplyPlan{Results: results, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
+	}
+	if previous.Server.DomainRouterSettings().Table != next.Server.DomainRouterSettings().Table {
+		results = append(results, e.RemoveDomainRouterCapture(previous)...)
+	}
+	if reflect.DeepEqual(previous.Server.HostFirewall, next.Server.HostFirewall) == false {
+		results = append(results, e.RemoveHostControlAccess(previous)...)
+		if resultsOK(results) == false {
+			return ApplyPlan{Results: results, DryRun: e.Runner.DryRun, Firewall: netfilter.Backend}
+		}
 	}
 	plan := e.ApplyConfig(next)
 	plan.Results = append(results, plan.Results...)

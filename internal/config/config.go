@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+	"granger/internal/modules"
 	"granger/pkg/netfilter"
 )
 
@@ -43,14 +44,23 @@ type User struct {
 	Client           string   `json:"client,omitempty" yaml:"client,omitempty"`
 }
 
+type HostFirewall struct {
+	Family      string `json:"family" yaml:"family"`
+	Table       string `json:"table" yaml:"table"`
+	InputChain  string `json:"input_chain" yaml:"input_chain"`
+	AccessChain string `json:"access_chain" yaml:"access_chain"`
+}
+
 type Server struct {
-	GUIVPNPort   int      `json:"gui_vpn_port,omitempty" yaml:"gui_vpn_port,omitempty"`
-	PublicIP     string   `json:"public_ip,omitempty" yaml:"public_ip,omitempty"`
-	UplinkIF     string   `json:"uplink_if,omitempty" yaml:"uplink_if,omitempty"`
-	UplinkGW     string   `json:"uplink_gw,omitempty" yaml:"uplink_gw,omitempty"`
-	DNSInterface string   `json:"dns_interface,omitempty" yaml:"dns_interface,omitempty"`
-	DNSListen    string   `json:"dns_listen,omitempty" yaml:"dns_listen,omitempty"`
-	DNSUpstreams []string `json:"dns_upstreams,omitempty" yaml:"dns_upstreams,omitempty"`
+	DomainRouter DomainRouter  `json:"domain_router,omitempty" yaml:"domain_router,omitempty"`
+	HostFirewall *HostFirewall `json:"host_firewall,omitempty" yaml:"host_firewall,omitempty"`
+	GUIVPNPort   int           `json:"gui_vpn_port,omitempty" yaml:"gui_vpn_port,omitempty"`
+	PublicIP     string        `json:"public_ip,omitempty" yaml:"public_ip,omitempty"`
+	UplinkIF     string        `json:"uplink_if,omitempty" yaml:"uplink_if,omitempty"`
+	UplinkGW     string        `json:"uplink_gw,omitempty" yaml:"uplink_gw,omitempty"`
+	DNSInterface string        `json:"dns_interface,omitempty" yaml:"dns_interface,omitempty"`
+	DNSListen    string        `json:"dns_listen,omitempty" yaml:"dns_listen,omitempty"`
+	DNSUpstreams []string      `json:"dns_upstreams,omitempty" yaml:"dns_upstreams,omitempty"`
 }
 
 type Output struct {
@@ -197,6 +207,23 @@ func SaveAtomic(path string, cfg Config) error {
 }
 
 func (c Config) Validate() error {
+	if err := c.Server.validateDomainRouter(); err != nil {
+		return err
+	}
+	if fw := c.Server.HostFirewall; fw != nil {
+		if fw.Family != "inet" && fw.Family != "ip" {
+			return errors.New("host_firewall family must be inet or ip")
+		}
+		for _, id := range []string{fw.Table, fw.InputChain, fw.AccessChain} {
+			if regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]{0,63}$`).MatchString(id) == false {
+				return errors.New("host_firewall requires valid table and chain names")
+			}
+		}
+		if fw.InputChain == fw.AccessChain {
+			return errors.New("host_firewall access chain must differ from input chain")
+		}
+	}
+
 	if c.Server.GUIVPNPort < 0 || c.Server.GUIVPNPort > 65535 {
 		return errors.New("gui_vpn_port must be between 0 and 65535")
 	}
@@ -238,6 +265,10 @@ func (c Config) Validate() error {
 		}
 	}
 	for name, out := range c.Outputs {
+		module, supported := modules.Find(out.Type)
+		if supported == false || module.Entrypoint == false {
+			return errors.New("output " + name + " has unsupported type " + out.Type)
+		}
 		if out.Type == "" {
 			return errors.New("output " + name + " has empty type")
 		}
@@ -280,12 +311,35 @@ func (c Config) Validate() error {
 			return err
 		}
 	}
+	instances := map[string]int{}
 	for name, up := range c.Upstreams {
+		module, supported := modules.Find(up.Type)
+		if supported == false || module.Upstream == false {
+			return errors.New("upstream " + name + " has unsupported type " + up.Type)
+		}
+		if up.IsEnabled() {
+			instances[up.Type]++
+			if module.MaxInstances > 0 && instances[up.Type] > module.MaxInstances {
+				return errors.New(up.Type + " supports one active instance with the current daemon adapter")
+			}
+		}
+		if up.RouteMode != "" || up.Install != nil {
+			return errors.New("upstream " + name + ": route_mode and install are unsupported; use routing rules and the driver installer")
+		}
+		if up.Type != "snx-rs" && (len(up.AuthFlow) > 0 || len(up.PromptPatterns) > 0) {
+			return errors.New("upstream " + name + " does not support interactive authentication")
+		}
 		table := netfilter.RouteTableID(name)
+		if table == c.Server.DomainRouterSettings().Table {
+			return errors.New("upstream " + name + " conflicts with domain router table")
+		}
 		if previous, ok := routeTables[table]; ok {
 			return errors.New("upstream routing table collision: " + previous + " and " + name)
 		}
 		routeTables[table] = name
+		if (up.Type == "xray" || up.Type == "sing-box") && up.IsEnabled() && up.Interface == "" {
+			return errors.New("upstream " + name + " requires a kernel interface; proxy-only egress is not supported by this adapter")
+		}
 		if up.Type == "" {
 			return errors.New("upstream " + name + " has empty type")
 		}

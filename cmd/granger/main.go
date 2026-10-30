@@ -30,11 +30,12 @@ func main() {
 	h := health.New(r)
 	switch cmd {
 	case "help", "-h", "--help":
-		fmt.Println("usage: granger [apply|restore|health|runtime|drivers|serve-gui [ADDR] [DIR]|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
+		fmt.Println("usage: granger [validate [FILE]|apply|restore|health|runtime|drivers|serve-gui [ADDR] [DIR]|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
 		fmt.Println()
 		fmt.Println("commands:")
 		fmt.Println("  apply [--dry-run]     apply declarative routing config")
 		fmt.Println("  restore [--dry-run]   start configured tunnels and restore routing after boot")
+		fmt.Println("  validate [FILE]       validate configuration without changing the server")
 		fmt.Println("  health                run health checks")
 		fmt.Println("  runtime               show output/upstream driver runtime states")
 		fmt.Println("  drivers               list registered upstream/output drivers")
@@ -64,6 +65,27 @@ func main() {
 				os.Exit(1)
 			}
 		}
+	case "firewall-cleanup":
+		cfg := mustConfig()
+		cleanup := append(e.RemoveHostControlAccess(cfg), e.RemoveDomainRouterCapture(cfg)...)
+		for _, result := range cleanup {
+			if result.OK == false {
+				log.Fatal(result.Output)
+			}
+		}
+	case "validate":
+		path := config.Path
+		if len(os.Args) > 2 {
+			path = os.Args[2]
+		}
+		cfg, err := config.Load(path)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := e.ValidateConfig(cfg); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Configuration is valid")
 	case "health":
 		cfg := mustConfig()
 		st := h.Check(cfg)
@@ -119,7 +141,7 @@ func main() {
 			fmt.Printf("[%v] %s\n$ %s\n%s\n\n", res.OK, res.Title, res.Command, res.Output)
 		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: granger [apply|restore|health|runtime|drivers|serve-gui [ADDR] [DIR]|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
+		fmt.Fprintln(os.Stderr, "usage: granger [validate [FILE]|apply|restore|health|runtime|drivers|serve-gui [ADDR] [DIR]|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
 		os.Exit(2)
 	}
 }

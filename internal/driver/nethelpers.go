@@ -195,17 +195,27 @@ func renderDomainDNS(name string, up config.Upstream, rules []config.Rule) []DNS
 		if rule.Via != name {
 			continue
 		}
+		set := ipsetName(name)
+		if rule.DomainMatch == "sni" {
+			set = ""
+		}
 		for _, domain := range rule.Domains {
+			if rule.DomainMatch == "sni" {
+				if strings.HasPrefix(domain, "regexp:") {
+					continue
+				}
+				domain = strings.TrimPrefix(strings.TrimPrefix(domain, "full:"), "domain:")
+			}
 			domain = normalizeDomain(domain)
 			if domain == "" {
 				continue
 			}
 			if len(up.DNS) == 0 {
-				out = append(out, DNSRule{Domain: domain, Set: ipsetName(name)})
+				out = append(out, DNSRule{Domain: domain, Set: set})
 				continue
 			}
 			for _, server := range up.DNS {
-				out = append(out, DNSRule{Domain: domain, Server: server, Set: ipsetName(name)})
+				out = append(out, DNSRule{Domain: domain, Server: server, Set: set})
 			}
 		}
 	}
