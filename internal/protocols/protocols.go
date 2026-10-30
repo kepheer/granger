@@ -140,7 +140,7 @@ func (i aptInstaller) Check(r runner.Runner) Status {
 	state := "installed"
 	if !installed {
 		state = "available"
-		summary = i.display + " is not installed. Granger can install package(s): " + strings.Join(i.packages, ", ") + "."
+		summary = "Not installed"
 	}
 	return Status{Name: i.name, DisplayName: i.display, Installed: installed, Installable: true, State: state, Summary: summary, Commands: results}
 }
@@ -172,7 +172,7 @@ func (i amneziaWGInstaller) Check(r runner.Runner) Status {
 	if installed {
 		return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: true, Installable: true, State: "installed", Summary: "AmneziaWG is ready.", Commands: results}
 	}
-	return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: false, Installable: true, State: "available", Summary: "Installs AmneziaWG using the upstream Amnezia Linux kernel module instructions for Debian/Ubuntu.", Commands: results}
+	return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: false, Installable: true, State: "available", Summary: "Not installed", Commands: results}
 }
 
 func (i amneziaWGInstaller) Install(r runner.Runner) []runner.Result {
@@ -214,7 +214,7 @@ func (i singBoxInstaller) Check(r runner.Runner) Status {
 	if installed {
 		return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: true, Installable: true, State: "installed", Summary: "sing-box is ready.", Commands: results}
 	}
-	return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: false, Installable: true, State: "available", Summary: "Installs sing-box from the official SagerNet APT repository.", Commands: results}
+	return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: false, Installable: true, State: "available", Summary: "Not installed", Commands: results}
 }
 
 func (i singBoxInstaller) Install(r runner.Runner) []runner.Result {
@@ -255,7 +255,7 @@ func (i snxRSInstaller) Check(r runner.Runner) Status {
 	if installed {
 		return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: true, Installable: true, State: "installed", Summary: "SNX-RS is ready.", Commands: results}
 	}
-	return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: false, Installable: true, State: "available", Summary: "Installs SNX-RS from the upstream APT repository. A simulated apt install is run before changing packages.", Commands: results}
+	return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: false, Installable: true, State: "available", Summary: "Not installed", Commands: results}
 }
 
 func (i snxRSInstaller) Install(r runner.Runner) []runner.Result {
@@ -293,7 +293,7 @@ func (i xrayInstaller) Check(r runner.Runner) Status {
 	if installed {
 		return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: true, Installable: true, State: "installed", Summary: "Xray is ready.", Commands: results}
 	}
-	return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: false, Installable: true, State: "available", Summary: "Installs Xray using the official XTLS/Xray-install script.", Commands: results}
+	return Status{Name: i.Name(), DisplayName: i.DisplayName(), Installed: false, Installable: true, State: "available", Summary: "Not installed", Commands: results}
 }
 
 func (i xrayInstaller) Install(r runner.Runner) []runner.Result {
