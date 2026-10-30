@@ -66,11 +66,16 @@ jobs:
           cd artifacts
           sha256sum * > SHA256SUMS
 
+      - name: Prepare release notes
+        run: |
+          awk '/^## / { if (found) exit; found=1; next } found { print }' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -- --title "Granger ${GITHUB_REF_NAME}" --notes-file CHANGELOG.md
+          set -- --title "${GITHUB_REF_NAME}" --notes-file release-notes.md
           case "${GITHUB_REF_NAME}" in
             *-*) set -- "$@" --prerelease --latest=false ;;
           esac
