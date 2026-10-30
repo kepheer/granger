@@ -107,7 +107,7 @@ func TestAsyncSuccessWaitsForRoutingAndReportsRoutingFailure(t *testing.T) {
 
 func TestAsyncSNXStartAndSubmitKeepInteractiveProcess(t *testing.T) {
 	dir := t.TempDir()
-	cli := "#!/bin/sh\nif [ \"$3\" = disconnect ]; then exit 0; fi\nprintf 'Password:'\nread password\nprintf 'Verification Code:'\nread code\nprintf 'Connected'\n"
+	cli := "#!/bin/sh\nif [ \"$3\" = disconnect ] || [ \"$3\" = status ]; then exit 0; fi\nprintf 'Password:'\nread password\nprintf 'Verification Code:'\nread code\nprintf 'Connected'\n"
 	if err := os.WriteFile(filepath.Join(dir, "snxctl"), []byte(cli), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -132,5 +132,28 @@ func TestAsyncSNXStartAndSubmitKeepInteractiveProcess(t *testing.T) {
 	status = waitAsync(t, manager)
 	if status.Pending || status.Result == nil || status.Result.OK == false {
 		t.Fatalf("could not complete interactive sign-in: %#v", status)
+	}
+}
+
+func TestUnavailableServiceFailsBeforeDisconnectOrPasswordSubmission(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "unexpected-command")
+	cli := "#!/bin/sh\nif [ \"$3\" = status ]; then exit 1; fi\nprintf unexpected > '" + marker + "'\n"
+	if err := os.WriteFile(filepath.Join(dir, "snxctl"), []byte(cli), 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "vpn.conf")
+	if err := os.WriteFile(path, []byte("server-name = example.test\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	manager := New(runner.New())
+	manager.StartAsync(config.Upstream{Config: path}, map[string]string{"password": "fixture"}, nil)
+	status := waitAsync(t, manager)
+	if status.Result == nil || status.Result.OK || status.Result.Title != "Check SNX-RS service" {
+		t.Fatalf("unavailable service was not reported: %#v", status)
+	}
+	if _, err := os.Stat(marker); os.IsNotExist(err) == false {
+		t.Fatal("unavailable service received a disconnect or connect command")
 	}
 }

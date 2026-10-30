@@ -170,6 +170,15 @@ func (m *Manager) start(parent context.Context, up config.Upstream, inputs map[s
 	if value == "" {
 		return runner.Result{Title: "Start SNX-RS auth", Command: "snxctl connect", Output: "first secret value is empty", OK: false, Status: "error"}
 	}
+	serviceCtx, serviceCancel := context.WithTimeout(parent, 5*time.Second)
+	service := exec.CommandContext(serviceCtx, "snxctl", "--config-file", up.Config, "status")
+	service.WaitDelay = time.Second
+	serviceErr := service.Run()
+	serviceCancel()
+	if serviceErr != nil {
+		return runner.Result{Title: "Check SNX-RS service", Command: "snxctl status", Output: "The VPN service is not responding — restart the SNX-RS driver and try again", OK: false, Status: "error"}
+	}
+
 	disconnectCtx, disconnectCancel := context.WithTimeout(parent, 20*time.Second)
 	disconnect := exec.CommandContext(disconnectCtx, "snxctl", "--config-file", up.Config, "disconnect")
 	disconnect.WaitDelay = time.Second
