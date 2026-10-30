@@ -74,6 +74,17 @@ func (r Renderer) Render(cfg config.Config, rules []driver.DNSRule) string {
 			b.WriteString("listen-address=" + out.ServerIP + "\n")
 		}
 	}
+	addresses := cfg.GUIVPNAddresses()
+	if cfg.Server.GUIVPNPort > 0 {
+		b.WriteString("local=/granger.local/\n")
+		if len(addresses) == 0 {
+			addresses = []string{"127.0.0.1"}
+		}
+		for _, address := range addresses {
+			b.WriteString("host-record=granger.local," + address + "\n")
+		}
+	}
+
 	b.WriteString("port=53\nno-resolv\n")
 	for _, upstream := range cfg.Server.DNSUpstreams {
 		b.WriteString("server=" + upstream + "\n")

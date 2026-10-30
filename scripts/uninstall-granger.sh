@@ -40,11 +40,19 @@ cleanup_linked_configs /etc/amnezia/amneziawg awg-quick
 cleanup_linked_configs /etc/openvpn/server openvpn-server
 cleanup_linked_configs /etc/openvpn/client openvpn-client
 
-for unit in /etc/systemd/system/granger-*.service; do
+for unit in /etc/systemd/system/granger-*.socket /etc/systemd/system/granger-*.timer /etc/systemd/system/granger-*.service; do
   [ -f "$unit" ] || continue
   systemctl disable --now "$(basename "$unit")" 2>/dev/null || true
   rm -f "$unit"
 done
+
+if command -v nft >/dev/null 2>&1; then
+  for handle in $(nft -a list chain inet host_security input 2>/dev/null | awk '/jump granger_control/ {print $NF}'); do
+    nft delete rule inet host_security input handle "$handle" 2>/dev/null || true
+  done
+  nft flush chain inet host_security granger_control 2>/dev/null || true
+  nft delete chain inet host_security granger_control 2>/dev/null || true
+fi
 
 if command -v ip6tables >/dev/null 2>&1; then
   while ip6tables -D OUTPUT -j GRANGER_USER_OUTPUT 2>/dev/null; do :; done
@@ -94,7 +102,7 @@ fi
 
 rm -f /etc/systemd/system/granger.service
 rm -f /etc/dnsmasq.d/granger.conf
-rm -f /usr/local/sbin/granger
+rm -f /usr/local/sbin/granger /usr/local/libexec/granger-wait-network
 rm -rf /etc/granger /opt/granger /var/lib/granger /var/log/granger
 
 if [ "$REMOVE_ADMIN_WG" = true ]; then

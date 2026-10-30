@@ -193,6 +193,7 @@ write_config() {
   fi
   cat >"$CONFIG_PATH" <<EOF
 server:
+  gui_vpn_port: 80
   public_ip: "${PUBLIC_IP}"
   uplink_if: "${UPLINK_IF}"
   uplink_gw: "${UPLINK_GW}"
@@ -220,6 +221,25 @@ EOF
   chmod 0600 "$CONFIG_PATH"
 }
 
+write_network_wait() {
+  install -d -m 0755 /usr/local/libexec
+  cat >/usr/local/libexec/granger-wait-network <<'EOF'
+#!/bin/sh
+set -eu
+attempt=0
+while [ "$attempt" -lt 60 ]; do
+  if ip -4 route show default | grep -q '^default '; then
+    exit 0
+  fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+printf 'No IPv4 default route available after 60 seconds\n' >&2
+exit 1
+EOF
+  chmod 0755 /usr/local/libexec/granger-wait-network
+}
+
 write_service() {
   info "Writing systemd service"
   cat >"$SERVICE_PATH" <<EOF
@@ -230,6 +250,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+TimeoutStartSec=180
+ExecStartPre=/usr/local/libexec/granger-wait-network
 ExecStartPre=-${BIN_DST} restore
 ExecStart=${BIN_DST} serve-gui ${LISTEN} ${GUI_DST}
 Restart=on-failure
@@ -262,12 +284,14 @@ main() {
   install_packages
   install_files
   write_config
+  write_network_wait
   write_service
 
   printf '\nGranger installed.\n'
   printf 'Open: http://%s\n' "$LISTEN"
   printf 'Administrative token: /etc/granger/secrets/admin-token\n'
-  printf 'Access the loopback-only GUI through an SSH tunnel.\n'
+  printf 'After connecting a VPN profile, open http://granger.local/ using its configured DNS.\n'
+  printf 'Initial access is available through an SSH tunnel to the loopback GUI.\n'
   printf 'Protocol packages are installed later from the GUI.\n'
 }
 

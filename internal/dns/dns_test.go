@@ -22,3 +22,31 @@ func TestRenderedConfigStableAcrossOutputMapOrder(t *testing.T) {
 		t.Fatal("expected sorted output interfaces")
 	}
 }
+
+func TestLocalGUIMatchesEnabledVPNAddresses(t *testing.T) {
+	disabled := false
+	cfg := config.Default("192.0.2.1", "eth0", "192.0.2.254")
+	cfg.Outputs = map[string]config.Output{
+		"awg": {Interface: "awg0", ServerIP: "10.19.84.1"},
+		"wg":  {Interface: "wg0", ServerIP: "10.64.0.1"},
+		"off": {Interface: "wg2", ServerIP: "10.3.0.1", Enabled: &disabled},
+	}
+	renderer := New(runner.NewDryRun())
+	body := renderer.Render(cfg, nil)
+	for _, address := range []string{"10.19.84.1", "10.64.0.1"} {
+		if strings.Contains(body, "host-record=granger.local,"+address+"\n") == false {
+			t.Fatalf("missing GUI record for %s", address)
+		}
+	}
+	if strings.Contains(body, "host-record=granger.local,10.3.0.1") {
+		t.Fatal("disabled output published")
+	}
+	cfg.Outputs = map[string]config.Output{}
+	if strings.Contains(renderer.Render(cfg, nil), "host-record=granger.local,127.0.0.1") == false {
+		t.Fatal("base installation lacks local GUI record")
+	}
+	cfg.Server.GUIVPNPort = 0
+	if strings.Contains(renderer.Render(cfg, nil), "granger.local") {
+		t.Fatal("disabled GUI published DNS")
+	}
+}

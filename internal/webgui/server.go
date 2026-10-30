@@ -60,6 +60,7 @@ func (s Server) ListenAndServe() error {
 	refreshRoutingKey()
 	mutationMu.Unlock()
 	go watchRouting(ctx)
+	go watchVPNGUI(ctx, listen, securityHeaders(s.handler(dir)))
 	server := &http.Server{
 		Addr:              listen,
 		Handler:           securityHeaders(s.handler(dir)),

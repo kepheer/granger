@@ -121,9 +121,10 @@ type InstallSpec struct {
 func Default(publicIP, uplinkIF, uplinkGW string) Config {
 	return Config{
 		Server: Server{
-			PublicIP: publicIP,
-			UplinkIF: uplinkIF,
-			UplinkGW: uplinkGW,
+			GUIVPNPort: 80,
+			PublicIP:   publicIP,
+			UplinkIF:   uplinkIF,
+			UplinkGW:   uplinkGW,
 		},
 		Users:     map[string]User{},
 		Outputs:   map[string]Output{},

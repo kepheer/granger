@@ -89,7 +89,10 @@ func (e Engine) applyUserAccess(cfg config.Config) []runner.Result {
 	if e.Runner.DryRun {
 		return []runner.Result{{Title: "Apply personal access atomically", Command: "iptables-restore --noflush --wait 5", Output: body.String(), OK: true, Status: "dry-run"}}
 	}
-	return []runner.Result{e.Runner.Run("Apply personal access atomically", 15*time.Second, strings.NewReader(body.String()), "iptables-restore", "--noflush", "--wait", "5")}
+	return []runner.Result{
+		e.Runner.Run("Apply personal access atomically", 15*time.Second, strings.NewReader(body.String()), "iptables-restore", "--noflush", "--wait", "5"),
+		e.applyHostControlAccess(cfg),
+	}
 }
 
 func writeInterfaceDeny(body *strings.Builder, iface string) {
@@ -110,8 +113,8 @@ func writeClientInput(body *strings.Builder, cfg config.Config, out config.Outpu
 		return
 	}
 	if active && exists {
-		if cfg.Server.GUIVPNPort > 0 && out.ServerIP != "" {
-			body.WriteString(accessRule(netfilter.UserInputChain, append(append([]string{}, match...), "-d", out.ServerIP, "-p", "tcp", "--dport", strconv.Itoa(cfg.Server.GUIVPNPort), "-j", "ACCEPT")...))
+		for _, address := range cfg.GUIVPNAddresses() {
+			body.WriteString(accessRule(netfilter.UserInputChain, append(append([]string{}, match...), "-d", address, "-p", "tcp", "--dport", strconv.Itoa(cfg.Server.GUIVPNPort), "-j", "ACCEPT")...))
 		}
 
 		addresses := []string{out.ServerIP}
