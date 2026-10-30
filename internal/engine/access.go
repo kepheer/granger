@@ -48,6 +48,7 @@ func (e Engine) applyUserAccess(cfg config.Config) []runner.Result {
 			if proxy == false {
 				writeClientInput(&body, cfg, out, client)
 			}
+			writePrivateAccess(&body, cfg, client, chain, match)
 			if cfg.ClientEnabled(client) && user.AccessRestricted == false && (exists || client.User == "") {
 				body.WriteString(accessRule(chain, append(append([]string{}, match...), "-j", "RETURN")...))
 				if proxy == false {
@@ -89,6 +90,7 @@ func (e Engine) applyUserAccess(cfg config.Config) []runner.Result {
 	}
 	body.WriteString(accessRule(netfilter.UserOutputChain, "-m", "mark", "--mark", "0x40000000/0x40000000", "-j", "REJECT"))
 	body.WriteString("COMMIT\n")
+	body.WriteString(renderEgressAccess(cfg))
 	if e.Runner.DryRun {
 		return []runner.Result{{Title: "Apply personal access atomically", Command: "iptables-restore --noflush --wait 5", Output: body.String(), OK: true, Status: "dry-run"}}
 	}
@@ -163,8 +165,7 @@ func (e Engine) applyUserDefaultRoutes(cfg config.Config) []runner.Result {
 			if proxy == false && (client.IP == "" || out.Interface == "") {
 				continue
 			}
-			search := strings.ReplaceAll(match, "'", "")
-			script := "ip rule show | grep -q " + netfilter.ShellQuote(search+".*lookup "+table) + " || ip rule add " + match + " table " + table + " priority 30000"
+			script := netfilter.EnsureIPRule(match, table, "30000")
 			results = append(results, e.Runner.Run("Default route for user "+client.User, 10*time.Second, nil, "sh", "-c", script))
 		}
 	}
