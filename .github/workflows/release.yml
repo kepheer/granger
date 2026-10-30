@@ -55,7 +55,6 @@ jobs:
           cp build/granger "build/granger-${version}/granger"
           cp scripts/install-granger.sh "build/granger-${version}/scripts/install-granger.sh"
           cp scripts/uninstall-granger.sh "build/granger-${version}/scripts/uninstall-granger.sh"
-          cp scripts/update-ru-domains.py "build/granger-${version}/scripts/update-ru-domains.py"
           cp -a dist/gui "build/granger-${version}/dist/gui"
           tar -C build -czf "artifacts/granger_${version}_linux_amd64.tar.gz" "granger-${version}"
 
