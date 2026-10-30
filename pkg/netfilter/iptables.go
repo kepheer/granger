@@ -9,6 +9,7 @@ import (
 const Backend = "iptables"
 
 const (
+	UserEgressChain  = "GRANGER_USER_EGRESS"
 	UserForwardChain = "GRANGER_USER_FORWARD"
 	UserInputChain   = "GRANGER_USER_INPUT"
 	OutputChain      = "GRANGER_OUTPUT"
@@ -99,7 +100,7 @@ func EnsureFirst(table, chain, target string) string {
 }
 
 func AccessHooks() string {
-	return strings.Join([]string{ensureChain("", UserForwardChain), ensureChain("", UserOutputChain), ensureChain("", UserInputChain), EnsureFirst("", "FORWARD", UserForwardChain), EnsureFirst("", "OUTPUT", UserOutputChain), EnsureFirst("", "INPUT", UserInputChain), IPv6ProxyGuard()}, "\n")
+	return strings.Join([]string{ensureChain("mangle", UserEgressChain), EnsureFirst("mangle", "POSTROUTING", UserEgressChain), ensureChain("", UserForwardChain), ensureChain("", UserOutputChain), ensureChain("", UserInputChain), EnsureFirst("", "FORWARD", UserForwardChain), EnsureFirst("", "OUTPUT", UserOutputChain), EnsureFirst("", "INPUT", UserInputChain), IPv6ProxyGuard()}, "\n")
 }
 
 func IPv6ProxyGuard() string {

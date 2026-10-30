@@ -6,6 +6,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
 		ArrowLeftIcon,
@@ -16,6 +18,7 @@
 	} from 'phosphor-svelte';
 
 	type Upstream = {
+		allow_private?: boolean;
 		type: string;
 		interface?: string;
 		config?: string;
@@ -289,6 +292,24 @@
 			requesting = false;
 		}
 	}
+	async function setPrivateNetworks(allowed: boolean) {
+		if (upstream === null || busy) {
+			return;
+		}
+		busy = true;
+		message = '';
+		try {
+			await api(`/api/upstreams/${encodeURIComponent(name)}`, 'PUT', {
+				name,
+				upstream: { ...upstream, allow_private: allowed }
+			});
+			await load();
+		} catch (error) {
+			message = error instanceof Error ? error.message : String(error);
+		} finally {
+			busy = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -355,6 +376,17 @@
 					Config file: <span class="font-mono text-white"
 						>{upstream?.config ?? '—'}</span
 					>
+				</div>
+				<div class="flex items-center gap-2 pt-2">
+					<Checkbox
+						id="upstream-private"
+						checked={upstream?.allow_private === true}
+						disabled={upstream === null || busy}
+						onCheckedChange={(checked) => {
+							void setPrivateNetworks(checked === true);
+						}}
+					/>
+					<Label for="upstream-private">Allow private networks</Label>
 				</div>
 			</Card.Content>
 		</Card.Root>

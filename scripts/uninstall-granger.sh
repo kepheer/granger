@@ -76,6 +76,9 @@ iptables -X GRANGER_USER_INPUT 2>/dev/null || true
 iptables -D OUTPUT -j GRANGER_USER_OUTPUT 2>/dev/null || true
 iptables -F GRANGER_USER_OUTPUT 2>/dev/null || true
 iptables -X GRANGER_USER_OUTPUT 2>/dev/null || true
+while iptables -t mangle -D POSTROUTING -j GRANGER_USER_EGRESS 2>/dev/null; do :; done
+iptables -t mangle -F GRANGER_USER_EGRESS 2>/dev/null || true
+iptables -t mangle -X GRANGER_USER_EGRESS 2>/dev/null || true
 iptables -t mangle -D OUTPUT -j GRANGER_OUTPUT 2>/dev/null || true
 iptables -t mangle -F GRANGER_OUTPUT 2>/dev/null || true
 iptables -t mangle -X GRANGER_OUTPUT 2>/dev/null || true

@@ -32,6 +32,8 @@ func (e Engine) applySNXConnectionMarks(cfg config.Config) []runner.Result {
 			}
 			results = append(results, e.Runner.Run("Save SNX-RS connection route mark "+name+" for "+outputName, 5*time.Second, nil, "sh", "-c", netfilter.EnsureAppend("mangle", netfilter.MangleChain, "-i", out.Interface, "-m", "mark", "--mark", mark, "-j", "CONNMARK", "--save-mark", "--nfmask", "0xffff", "--ctmask", "0xffff")))
 		}
+		results = append(results, e.Runner.Run("Save locally generated SNX-RS connection route mark "+name, 5*time.Second, nil, "sh", "-c", netfilter.EnsureAppend("mangle", netfilter.OutputChain, "-m", "mark", "--mark", mark, "-j", "CONNMARK", "--save-mark", "--nfmask", "0xffff", "--ctmask", "0xffff")))
+
 	}
 	return results
 }

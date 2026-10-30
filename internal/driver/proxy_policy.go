@@ -37,7 +37,7 @@ func proxySNIPolicy(cfg config.Config, name string, out config.Output) ([]any, [
 			tag := "granger-sni:" + client.Name + ":" + upstreamName
 			mark := netfilter.UserMark(name, client.Name) | netfilter.RouteTableID(upstreamName)
 			if out.Type == "xray" {
-				exits = append(exits, map[string]any{"tag": tag, "protocol": "freedom", "settings": map[string]any{"domainStrategy": "UseIPv4"}, "streamSettings": map[string]any{"sockopt": map[string]any{"mark": mark}}})
+				exits = append(exits, map[string]any{"tag": tag, "protocol": "freedom", "settings": freedomSettings(up.AllowPrivate), "streamSettings": map[string]any{"sockopt": map[string]any{"mark": mark, "domainStrategy": "UseIPv4"}}})
 			}
 			if out.Type == "sing-box" {
 				exits = append(exits, map[string]any{"tag": tag, "type": "direct", "routing_mark": mark})
@@ -131,6 +131,20 @@ func updateProxySNIPolicy(cfg config.Config, name string, out config.Output) (bo
 		exit, _ := value.(map[string]any)
 		tag, _ := exit["tag"].(string)
 		if strings.HasPrefix(tag, "granger-sni:") == false {
+			if out.Type == "xray" {
+				for _, client := range out.Clients {
+					if tag == "user-"+client.Name {
+						exit["settings"] = freedomSettings(cfg.UserAllowsPrivate(client.User))
+						stream, _ := exit["streamSettings"].(map[string]any)
+						if stream != nil {
+							socket, _ := stream["sockopt"].(map[string]any)
+							if socket != nil {
+								socket["domainStrategy"] = "UseIPv4"
+							}
+						}
+					}
+				}
+			}
 			exits = append(exits, value)
 		}
 	}
@@ -164,4 +178,12 @@ func updateProxySNIPolicy(cfg config.Config, name string, out config.Output) (bo
 		return false, err
 	}
 	return true, os.Rename(file.Name(), out.Config)
+}
+
+func freedomSettings(allowPrivate bool) map[string]any {
+	settings := map[string]any{}
+	if allowPrivate {
+		settings["finalRules"] = []any{map[string]any{"action": "allow", "ip": config.PrivateIPv4Networks()}}
+	}
+	return settings
 }

@@ -9,6 +9,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { ArrowLeftIcon, UploadSimpleIcon } from 'phosphor-svelte';
 
@@ -36,6 +38,7 @@
 	let name = $state(initial.name);
 	let iface = $state(initial.iface);
 	let inlineConfig = $state('');
+	let allowPrivate = $state(false);
 	let configName = $state('');
 	let message = $state('');
 	let saving = $state(false);
@@ -133,7 +136,12 @@
 				},
 				body: JSON.stringify({
 					name,
-					upstream: { type: selected.type, interface: iface, enabled: true },
+					upstream: {
+						type: selected.type,
+						interface: iface,
+						enabled: true,
+						allow_private: allowPrivate
+					},
 					inline_config: inlineConfig,
 					config_name: configName
 				})
@@ -205,6 +213,11 @@
 					{copy.iface}
 					<Input bind:value={iface} placeholder={selected.iface} />
 				</label>
+			</div>
+
+			<div class="flex items-center gap-2">
+				<Checkbox id="new-upstream-private" bind:checked={allowPrivate} />
+				<Label for="new-upstream-private">Allow private networks</Label>
 			</div>
 
 			{#if requiresConfig}

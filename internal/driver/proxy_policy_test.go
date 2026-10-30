@@ -18,3 +18,13 @@ func TestNativeProxySNIPolicyKeepsIdentityAndPermissions(t *testing.T) {
 		}
 	}
 }
+
+func TestPrivateFreedomTargetsRemainExplicit(t *testing.T) {
+	if len(freedomSettings(false)) != 0 {
+		t.Fatal("private destinations enabled by default")
+	}
+	body, _ := json.Marshal(freedomSettings(true))
+	if strings.Contains(string(body), "10.0.0.0/8") == false || strings.Contains(string(body), "0.0.0.0/0") || strings.Contains(string(body), "127.0.0.0") {
+		t.Fatal(string(body))
+	}
+}

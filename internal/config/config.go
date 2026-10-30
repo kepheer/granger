@@ -87,6 +87,7 @@ type Client struct {
 }
 
 type Upstream struct {
+	AllowPrivate     bool                `json:"allow_private,omitempty" yaml:"allow_private,omitempty"`
 	Type             string              `json:"type" yaml:"type"`
 	Interface        string              `json:"interface" yaml:"interface"`
 	Config           string              `json:"config,omitempty" yaml:"config,omitempty"`
@@ -230,6 +231,12 @@ func (c Config) Validate() error {
 
 	interfaces := map[string]string{}
 	userMarks := map[int]string{}
+	sniEnabled := false
+	for _, rule := range c.Rules {
+		if rule.DomainMatch == "sni" {
+			sniEnabled = true
+		}
+	}
 	services := map[string]string{}
 	routeTables := map[int]string{}
 	subnets := map[string]*net.IPNet{}
@@ -295,11 +302,11 @@ func (c Config) Validate() error {
 				subnets[name] = subnet
 			}
 		}
-		if out.Managed && (out.Type == "xray" || out.Type == "sing-box") {
+		if (out.Managed && (out.Type == "xray" || out.Type == "sing-box")) || sniEnabled {
 			for _, client := range out.Clients {
 				mark := netfilter.UserMark(name, client.Name)
 				if previous, ok := userMarks[mark]; ok {
-					return errors.New("proxy routing identity collision: " + previous + " and " + client.Name)
+					return errors.New("routing identity collision: " + previous + " and " + client.Name)
 				}
 				userMarks[mark] = name + ":" + client.Name
 			}

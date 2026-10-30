@@ -745,9 +745,6 @@ func (a apiServer) handleUsers(w http.ResponseWriter, r *http.Request) {
 			collision := false
 			mark := netfilter.UserMark(payload.Output, candidate)
 			for outputName, output := range cfg.Outputs {
-				if output.Managed == false || (output.Type != "xray" && output.Type != "sing-box") {
-					continue
-				}
 				for _, client := range output.Clients {
 					if netfilter.UserMark(outputName, client.Name) == mark {
 						collision = true

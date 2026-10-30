@@ -24,7 +24,7 @@ func TestSNXConnectionMarksAreScopedAndPreserveAccessBits(t *testing.T) {
 		},
 	}
 	results := New(runner.NewDryRun()).applySNXConnectionMarks(cfg)
-	if len(results) != 4 {
+	if len(results) != 5 {
 		t.Fatalf("unexpected results: %+v", results)
 	}
 	if strings.Contains(results[1].Command, "custom-vpn0/src_valid_mark=1") == false {
@@ -37,6 +37,9 @@ func TestSNXConnectionMarksAreScopedAndPreserveAccessBits(t *testing.T) {
 		if strings.Contains(result.Command, "disabled") || strings.Contains(result.Command, "eth0") {
 			t.Fatalf("unrelated interface changed: %+v", result)
 		}
+	}
+	if strings.Contains(results[4].Command, "GRANGER_OUTPUT") == false {
+		t.Fatal("local SNX connections do not preserve their return mark")
 	}
 	if strings.Contains(results[2].Command, "custom-vpn0") == false || strings.Contains(results[3].Command, "custom-clients0") == false {
 		t.Fatalf("wrong interface scope: %+v", results)
@@ -71,7 +74,7 @@ func TestSNXMarksApplyWhenInterfaceAppearsAfterStartup(t *testing.T) {
 	}
 	t.Setenv("GRANGER_SNX_TEST_CONNECTED", "yes")
 	results := engine.applySNXConnectionMarks(cfg)
-	if len(results) != 4 || resultsOK(results) == false {
+	if len(results) != 5 || resultsOK(results) == false {
 		t.Fatalf("interface appearance did not apply settings: %+v", results)
 	}
 	body, err := os.ReadFile(log)

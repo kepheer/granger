@@ -86,6 +86,7 @@ func (e Engine) applySNICapture(cfg config.Config) []runner.Result {
 
 func writeSNIOutputAccess(body *strings.Builder, cfg config.Config, name string, out config.Output, client config.Client) {
 	match := []string{"-m", "mark", "--mark", fmt.Sprintf("0x%x/0xffff0000", netfilter.UserMark(name, client.Name))}
+	writePrivateAccess(body, cfg, client, netfilter.UserOutputChain, match)
 	if cfg.ClientEnabled(client) {
 		for _, upstreamName := range sortedUpstreamNames(cfg) {
 			up := cfg.Upstreams[upstreamName]

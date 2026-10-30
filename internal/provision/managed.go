@@ -191,7 +191,7 @@ func renderOutput(name string, out config.Output, publicIP string) error {
 		tag := "user-" + client.Name
 		mark := netfilter.UserMark(name, client.Name)
 		if out.Type == "xray" {
-			outbounds = append(outbounds, map[string]any{"tag": tag, "protocol": "freedom", "settings": map[string]any{"domainStrategy": "UseIPv4"}, "streamSettings": map[string]any{"sockopt": map[string]any{"mark": mark}}})
+			outbounds = append(outbounds, map[string]any{"tag": tag, "protocol": "freedom", "settings": map[string]any{}, "streamSettings": map[string]any{"sockopt": map[string]any{"mark": mark, "domainStrategy": "UseIPv4"}}})
 			routing = append(routing, map[string]any{"type": "field", "user": []string{client.Name}, "outboundTag": tag})
 		}
 		if out.Type == "sing-box" {
