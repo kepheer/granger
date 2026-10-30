@@ -58,6 +58,9 @@ jobs:
           cp -a dist/gui "build/granger-${version}/dist/gui"
           tar -C build -czf "artifacts/granger_${version}_linux_amd64.tar.gz" "granger-${version}"
 
+      - name: Package installers
+        run: cp scripts/install-granger.sh scripts/uninstall-granger.sh artifacts/
+
       - name: Generate checksums
         run: |
           cd artifacts
@@ -67,8 +70,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -- --title "Granger ${GITHUB_REF_NAME}" --notes-file CHANGELOG.md
+          case "${GITHUB_REF_NAME}" in
+            *-*) set -- "$@" --prerelease --latest=false ;;
+          esac
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" artifacts/* --clobber
           else
-            gh release create "${GITHUB_REF_NAME}" artifacts/* --generate-notes
+            gh release create "${GITHUB_REF_NAME}" artifacts/* "$@" --verify-tag
           fi

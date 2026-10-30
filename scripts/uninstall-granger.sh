@@ -13,6 +13,45 @@ fi
 
 systemctl disable --now granger.service 2>/dev/null || true
 
+cleanup_linked_configs() {
+  directory="$1"
+  service="$2"
+  for conf in "$directory"/*.conf; do
+    [ -L "$conf" ] || continue
+    target="$(readlink -f "$conf" 2>/dev/null || true)"
+    case "$target" in
+      /etc/granger/*)
+        name="$(basename "$conf" .conf)"
+        if [ "$service" = wg-quick ] && [ "$name" = wg0 ] && [ "$REMOVE_ADMIN_WG" != true ]; then
+          cp -L "$conf" "$conf.granger-preserved"
+          chmod 0600 "$conf.granger-preserved"
+          mv -f "$conf.granger-preserved" "$conf"
+          continue
+        fi
+        systemctl disable --now "$service@$name.service" 2>/dev/null || true
+        rm -f "$conf"
+        ;;
+    esac
+  done
+}
+
+cleanup_linked_configs /etc/wireguard wg-quick
+cleanup_linked_configs /etc/amnezia/amneziawg awg-quick
+cleanup_linked_configs /etc/openvpn/server openvpn-server
+cleanup_linked_configs /etc/openvpn/client openvpn-client
+
+for unit in /etc/systemd/system/granger-*.service; do
+  [ -f "$unit" ] || continue
+  systemctl disable --now "$(basename "$unit")" 2>/dev/null || true
+  rm -f "$unit"
+done
+
+if command -v ip6tables >/dev/null 2>&1; then
+  while ip6tables -D OUTPUT -j GRANGER_USER_OUTPUT 2>/dev/null; do :; done
+  ip6tables -F GRANGER_USER_OUTPUT 2>/dev/null || true
+  ip6tables -X GRANGER_USER_OUTPUT 2>/dev/null || true
+fi
+
 if [ -r /var/lib/granger/route-tables ]; then
   while IFS= read -r table; do
     case "$table" in

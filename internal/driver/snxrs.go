@@ -37,7 +37,9 @@ func (SNXRSUpstream) Start(name string, up config.Upstream, ctx ApplyContext) []
 }
 
 func (SNXRSUpstream) Stop(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{ctx.Runner.Run("Stop SNX-RS upstream "+name, 30*time.Second, nil, "systemctl", "stop", snxRSService(up.Service))}
+	unit := netfilter.ShellQuote(snxRSService(up.Service))
+	script := "state=$(systemctl show --property=LoadState --value " + unit + ") || exit $?; [ \"$state\" = not-found ] || systemctl stop " + unit
+	return []runner.Result{ctx.Runner.Run("Stop SNX-RS upstream "+name, 30*time.Second, nil, "sh", "-c", script)}
 }
 
 func (SNXRSUpstream) Restart(name string, up config.Upstream, ctx ApplyContext) []runner.Result {

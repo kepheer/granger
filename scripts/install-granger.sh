@@ -150,6 +150,11 @@ download_artifacts() {
 
   info "Downloading ${url}"
   curl -fsSL "$url" -o "$TMP_DIR/granger.tar.gz"
+  curl -fsSL "${url%/*}/SHA256SUMS" -o "$TMP_DIR/SHA256SUMS"
+  archive_name="$(basename "$url")"
+  expected="$(awk -v name="$archive_name" '$2 == name {print $1}' "$TMP_DIR/SHA256SUMS")"
+  [ "${#expected}" -eq 64 ] || die "release checksum is missing or invalid"
+  printf '%s  %s\n' "$expected" "$TMP_DIR/granger.tar.gz" | sha256sum -c -
   tar -xzf "$TMP_DIR/granger.tar.gz" -C "$TMP_DIR"
 
   BIN_SRC="$(find "$TMP_DIR" -type f -name granger -perm -111 | head -n 1)"
