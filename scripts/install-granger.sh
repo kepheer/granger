@@ -3,7 +3,7 @@ set -eu
 
 APP_NAME="granger"
 REPO="${GRANGER_REPO:-kepheer/granger}"
-VERSION="${GRANGER_VERSION:-latest}"
+RELEASE_VERSION="${GRANGER_VERSION:-latest}"
 LISTEN="${GRANGER_LISTEN:-127.0.0.1:1984}"
 BIN_DST="/usr/local/sbin/granger"
 GUI_DST="/opt/granger/gui"
@@ -139,11 +139,11 @@ download_artifacts() {
   TMP_DIR="$(mktemp -d)"
   url="${GRANGER_TARBALL_URL:-}"
   if [ -z "$url" ]; then
-    if [ "$VERSION" = "latest" ]; then
+    if [ "$RELEASE_VERSION" = "latest" ]; then
       info "Resolving latest release"
       url="$(latest_tarball_url)"
     else
-      url="$(version_tarball_url "$VERSION")"
+      url="$(version_tarball_url "$RELEASE_VERSION")"
     fi
   fi
   [ -n "$url" ] || die "could not resolve Granger release tarball URL"
