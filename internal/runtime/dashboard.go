@@ -27,6 +27,7 @@ type Dashboard struct {
 	RouteRules        int                    `json:"route_rules"`
 	Outputs           int                    `json:"outputs"`
 	Upstreams         int                    `json:"upstreams"`
+	Profiles          int                    `json:"profiles"`
 	Users             int                    `json:"users"`
 	Runtime           []driver.RuntimeStatus `json:"runtime"`
 	Protocols         []protocols.Status     `json:"protocols"`
@@ -70,6 +71,10 @@ func Collect(cfg config.Config, r runner.Runner, e engine.Engine) Dashboard {
 		return cachedDashboard
 	}
 	runtimeStatuses := e.Runtime(cfg)
+	profiles := 0
+	for _, out := range cfg.Outputs {
+		profiles += len(out.Clients)
+	}
 	cachedDashboard = Dashboard{
 		CollectedAt:       time.Now(),
 		CPU:               readCPU(),
@@ -81,6 +86,7 @@ func Collect(cfg config.Config, r runner.Runner, e engine.Engine) Dashboard {
 		Outputs:           len(cfg.Outputs),
 		Upstreams:         len(cfg.Upstreams),
 		Users:             len(cfg.Users),
+		Profiles:          profiles,
 		Runtime:           runtimeStatuses,
 		Protocols:         protocols.New(r).StatusAll(),
 		Services:          collectServices(r, runtimeStatuses),

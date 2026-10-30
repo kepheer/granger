@@ -23,7 +23,11 @@
 
 	type Dashboard = {
 		cpu: { load_1: number; load_5: number; load_15: number; cores: number };
-		memory: { total_bytes: number; available_bytes: number; used_percent: number };
+		memory: {
+			total_bytes: number;
+			available_bytes: number;
+			used_percent: number;
+		};
 		disk: { total_bytes: number; free_bytes: number; used_percent: number };
 		network: { rx_bytes: number; tx_bytes: number };
 		network_interfaces: number;
@@ -31,6 +35,7 @@
 		outputs: number;
 		upstreams: number;
 		users: number;
+		profiles: number;
 		runtime: RuntimeStatus[];
 		services: Array<{ name: string; active: boolean; state: string }>;
 	};
@@ -141,50 +146,95 @@
 
 <section class="space-y-5">
 	<div>
-		<h1 class="font-display text-2xl font-bold text-white">{t('dashboard.title')}</h1>
+		<h1 class="font-display text-2xl font-bold text-white">
+			{t('dashboard.title')}
+		</h1>
 		<p class="mt-2 text-sm text-muted-foreground">{copy.subtitle}</p>
 	</div>
 
 	{#if error}
-		<div role="alert" class="rounded-md border border-border bg-white/[0.03] px-4 py-3 text-sm text-muted-foreground">{error}</div>
+		<div
+			role="alert"
+			class="rounded-md border border-border bg-white/[0.03] px-4 py-3 text-sm text-muted-foreground"
+		>
+			{error}
+		</div>
 	{/if}
 
 	<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 		<Card.Root class="rounded-lg">
 			<Card.Content class="flex items-start justify-between gap-3 p-4">
-				<div><div class="text-xs text-muted-foreground">{copy.cpu}</div><div class="mt-2 text-xl font-bold text-white">{dashboard?.cpu.load_1.toFixed(2) ?? '—'}</div><div class="mt-1 text-xs text-muted-foreground">{dashboard?.cpu.cores ?? '—'} cores</div></div>
+				<div>
+					<div class="text-xs text-muted-foreground">{copy.cpu}</div>
+					<div class="mt-2 text-xl font-bold text-white">
+						{dashboard?.cpu.load_1.toFixed(2) ?? '—'}
+					</div>
+					<div class="mt-1 text-xs text-muted-foreground">
+						{dashboard?.cpu.cores ?? '—'} cores
+					</div>
+				</div>
 				<CpuIcon class="size-5 text-white/55" />
 			</Card.Content>
 		</Card.Root>
 		<Card.Root class="rounded-lg">
 			<Card.Content class="flex items-start justify-between gap-3 p-4">
-				<div><div class="text-xs text-muted-foreground">{copy.memory}</div><div class="mt-2 text-xl font-bold text-white">{percent(dashboard?.memory.used_percent)}</div><div class="mt-1 text-xs text-muted-foreground">{bytes(dashboard?.memory.total_bytes)}</div></div>
+				<div>
+					<div class="text-xs text-muted-foreground">{copy.memory}</div>
+					<div class="mt-2 text-xl font-bold text-white">
+						{percent(dashboard?.memory.used_percent)}
+					</div>
+					<div class="mt-1 text-xs text-muted-foreground">
+						{bytes(dashboard?.memory.total_bytes)}
+					</div>
+				</div>
 				<DatabaseIcon class="size-5 text-white/55" />
 			</Card.Content>
 		</Card.Root>
 		<Card.Root class="rounded-lg">
 			<Card.Content class="flex items-start justify-between gap-3 p-4">
-				<div><div class="text-xs text-muted-foreground">{copy.disk}</div><div class="mt-2 text-xl font-bold text-white">{percent(dashboard?.disk.used_percent)}</div><div class="mt-1 text-xs text-muted-foreground">{bytes(dashboard?.disk.total_bytes)}</div></div>
+				<div>
+					<div class="text-xs text-muted-foreground">{copy.disk}</div>
+					<div class="mt-2 text-xl font-bold text-white">
+						{percent(dashboard?.disk.used_percent)}
+					</div>
+					<div class="mt-1 text-xs text-muted-foreground">
+						{bytes(dashboard?.disk.total_bytes)}
+					</div>
+				</div>
 				<HardDrivesIcon class="size-5 text-white/55" />
 			</Card.Content>
 		</Card.Root>
 		<Card.Root class="rounded-lg">
 			<Card.Content class="flex items-start justify-between gap-3 p-4">
-				<div><div class="text-xs text-muted-foreground">{copy.interfaces}</div><div class="mt-2 text-xl font-bold text-white">{dashboard?.network_interfaces ?? '—'}</div><div class="mt-1 text-xs text-muted-foreground">{copy.traffic}: ↓ {bytes(dashboard?.network.rx_bytes)} · ↑ {bytes(dashboard?.network.tx_bytes)}</div><div class="mt-1 text-xs text-muted-foreground">{copy.rules}: {dashboard?.route_rules ?? '—'}</div></div>
+				<div>
+					<div class="text-xs text-muted-foreground">{copy.interfaces}</div>
+					<div class="mt-2 text-xl font-bold text-white">
+						{dashboard?.network_interfaces ?? '—'}
+					</div>
+					<div class="mt-1 text-xs text-muted-foreground">
+						{copy.traffic}: ↓ {bytes(dashboard?.network.rx_bytes)} · ↑ {bytes(
+							dashboard?.network.tx_bytes
+						)}
+					</div>
+					<div class="mt-1 text-xs text-muted-foreground">
+						{copy.rules}: {dashboard?.route_rules ?? '—'}
+					</div>
+				</div>
 				<NetworkIcon class="size-5 text-white/55" />
 			</Card.Content>
 		</Card.Root>
 	</div>
 
 	<div class="grid gap-3 sm:grid-cols-3">
-		{#each [
-			{ label: copy.upstreams, value: dashboard?.upstreams, icon: PlugsIcon },
-			{ label: copy.outputs, value: dashboard?.outputs, icon: NetworkIcon },
-			{ label: copy.users, value: dashboard?.users, icon: UsersIcon }
-		] as stat}
+		{#each [{ label: copy.upstreams, value: dashboard?.upstreams, icon: PlugsIcon }, { label: copy.outputs, value: dashboard?.outputs, icon: NetworkIcon }, { label: copy.users, value: dashboard?.profiles, icon: UsersIcon }] as stat}
 			<Card.Root class="rounded-lg">
 				<Card.Content class="flex items-center justify-between p-4">
-					<div><div class="text-xs text-muted-foreground">{stat.label}</div><div class="mt-1 text-xl font-bold text-white">{stat.value ?? '—'}</div></div>
+					<div>
+						<div class="text-xs text-muted-foreground">{stat.label}</div>
+						<div class="mt-1 text-xl font-bold text-white">
+							{stat.value ?? '—'}
+						</div>
+					</div>
 					<stat.icon class="size-5 text-white/55" />
 				</Card.Content>
 			</Card.Root>
@@ -195,12 +245,16 @@
 		<Card.Header><Card.Title>{copy.runtime}</Card.Title></Card.Header>
 		<Card.Content class="space-y-2">
 			{#if dashboard === null}
-				<p class="text-sm text-muted-foreground" role="status">{error || copy.loading}</p>
+				<p class="text-sm text-muted-foreground" role="status">
+					{error || copy.loading}
+				</p>
 			{:else if dashboard.runtime.length === 0}
 				<p class="text-sm text-muted-foreground">{copy.empty}</p>
 			{:else}
 				{#each dashboard.runtime as item}
-					<div class="grid gap-1 rounded-md border border-border bg-white/[0.025] px-3 py-3 text-sm md:grid-cols-[1fr_.7fr_.7fr_1.5fr]">
+					<div
+						class="grid gap-1 rounded-md border border-border bg-white/[0.025] px-3 py-3 text-sm md:grid-cols-[1fr_.7fr_.7fr_1.5fr]"
+					>
 						<div class="font-medium text-white">{item.Name}</div>
 						<div class="text-muted-foreground">{item.Type}</div>
 						<div class={stateClass(item.State)}>{stateLabel(item.State)}</div>
@@ -209,10 +263,14 @@
 				{/each}
 			{/if}
 			{#each dashboard?.services ?? [] as service}
-				<div class="grid gap-1 rounded-md border border-border bg-white/[0.025] px-3 py-3 text-sm md:grid-cols-[1fr_.7fr_.7fr_1.5fr]">
+				<div
+					class="grid gap-1 rounded-md border border-border bg-white/[0.025] px-3 py-3 text-sm md:grid-cols-[1fr_.7fr_.7fr_1.5fr]"
+				>
 					<div class="font-medium text-white">{service.name}</div>
 					<div class="text-muted-foreground">systemd</div>
-					<div class={stateClass(service.active ? 'active' : 'broken')}>{service.active ? 'Running' : 'Stopped'}</div>
+					<div class={stateClass(service.active ? 'active' : 'broken')}>
+						{service.active ? 'Running' : 'Stopped'}
+					</div>
 					<div class="text-muted-foreground">{stateLabel(service.state)}</div>
 				</div>
 			{/each}
