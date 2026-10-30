@@ -86,7 +86,7 @@ func (SNXRSUpstream) ApplyRoutes(name string, up config.Upstream, ctx ApplyConte
 	}
 	needsDefault := false
 	for _, rule := range ctx.Config.Rules {
-		if rule.Via == name && rule.Default {
+		if rule.Via == name && (rule.Default || len(rule.Domains) > 0) {
 			needsDefault = true
 		}
 	}
@@ -99,7 +99,7 @@ func (SNXRSUpstream) ApplyRoutes(name string, up config.Upstream, ctx ApplyConte
 		res = append(res, ctx.Runner.Run("SNX-RS default route "+name, 10*time.Second, nil, "ip", "route", "replace", "default", "dev", up.Interface, "table", tableID))
 	}
 	snxIP := snxIPv4(up, ctx)
-	for _, dnsIP := range up.DNS {
+	for _, dnsIP := range snxDNS(up, ctx) {
 		args := []string{"route", "replace", dnsIP + "/32", "dev", up.Interface}
 		if snxIP != "" {
 			args = append(args, "src", snxIP)
@@ -160,6 +160,9 @@ func (SNXRSUpstream) ApplyFirewall(name string, up config.Upstream, ctx ApplyCon
 func (SNXRSUpstream) RenderDNS(name string, up config.Upstream, rules []config.Rule, ctx ApplyContext) []DNSRule {
 	if up.IsEnabled() == false {
 		return nil
+	}
+	if len(up.DNS) == 0 && snxInterfaceUp(up, ctx) {
+		up.DNS = snxDNS(up, ctx)
 	}
 	return renderDomainDNS(name, up, rules)
 }
