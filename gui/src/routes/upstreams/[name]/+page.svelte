@@ -26,6 +26,8 @@
 
 	type Pending = {
 		pending: boolean;
+		busy?: boolean;
+		result?: { OK: boolean; Output: string; Status: string };
 		step?: string;
 		step_type?: string;
 		label?: string;
@@ -64,7 +66,9 @@
 	let message = $state('');
 	let busy = $state(false);
 	let removeOpen = $state(false);
-	let authenticating = $state(false);
+	let requesting = $state(false);
+	const authenticating = $derived(requesting || pending.busy === true);
+	let refreshing = false;
 	let inlineConfig = $state('');
 	let savingConfig = $state(false);
 	let configSaved = $state('');
@@ -95,7 +99,10 @@
 				method === 'GET'
 					? undefined
 					: { 'content-type': 'application/json', 'x-granger-request': '1' },
-			body: body === undefined ? undefined : JSON.stringify(body)
+			body: body === undefined ? undefined : JSON.stringify(body),
+			signal: url.startsWith('/api/snx/')
+				? AbortSignal.timeout(15000)
+				: undefined
 		});
 		const result = await response.json();
 		if (response.ok === false || result.ok !== true) {
@@ -119,26 +126,32 @@
 	}
 
 	async function refreshStatus() {
+		if (refreshing) {
+			return;
+		}
+		refreshing = true;
 		try {
-			const result = await api('/api/runtime');
-			runtime =
-				result.data.find(
-					(item: { Name: string; Type: string }) =>
-						item.Name === name && item.Type === upstream?.type
-				) ?? null;
 			if (upstream?.type === 'snx-rs') {
 				const status = (
 					await api(`/api/snx/${encodeURIComponent(name)}/status`)
 				).data;
-				pending = status;
+				await updatePending(status);
 				configReady = status.config_ready === true;
 				driverInstalled = status.driver_installed === true;
 				configError = status.config_error ?? '';
 				setupLoaded = true;
 				output = pending.output ?? output;
 			}
+			const result = await api('/api/runtime');
+			runtime =
+				result.data.find(
+					(item: { Name: string; Type: string }) =>
+						item.Name === name && item.Type === upstream?.type
+				) ?? null;
 		} catch (error) {
 			message = error instanceof Error ? error.message : String(error);
+		} finally {
+			refreshing = false;
 		}
 	}
 
@@ -217,12 +230,26 @@
 		}
 	}
 
+	async function updatePending(status: Pending) {
+		const focusStep =
+			pending.pending === false && status.pending && status.busy !== true;
+		pending = status;
+		output = status.output ?? status.result?.Output ?? output;
+		if (status.result?.OK === false) {
+			message = status.result.Output || 'Could not sign in — try again';
+		}
+		if (focusStep) {
+			await tick();
+			stepInput?.focus();
+		}
+	}
+
 	async function snx(action: string, inputs: Record<string, string> = {}) {
-		if (authenticating) {
+		if (requesting || (pending.busy === true && action !== 'cancel')) {
 			return;
 		}
 
-		authenticating = true;
+		requesting = true;
 		message = '';
 		try {
 			const result = await api(
@@ -230,7 +257,7 @@
 				'POST',
 				{ inputs }
 			);
-			pending = result.data ?? { pending: false };
+			await updatePending(result.data ?? { pending: false });
 			output =
 				pending.output ??
 				result.results
@@ -250,7 +277,7 @@
 		} catch (error) {
 			message = error instanceof Error ? error.message : String(error);
 		} finally {
-			authenticating = false;
+			requesting = false;
 		}
 	}
 </script>
@@ -406,7 +433,12 @@
 							disabled={savingConfig || authenticating || pending.pending}
 						/></label
 					>
-					{#if configSaved}<p bind:this={configStatus} tabindex="-1" role="status" class="text-sm text-emerald-300">
+					{#if configSaved}<p
+							bind:this={configStatus}
+							tabindex="-1"
+							role="status"
+							class="text-sm text-emerald-300"
+						>
 							{configSaved}
 						</p>{/if}
 					<Button
@@ -433,7 +465,18 @@
 					>
 						Enable this connection to sign in
 					</p>{/if}
-				{#if pending.pending}
+				{#if pending.busy}
+					<p role="status" class="text-sm text-muted-foreground">
+						Waiting for the VPN server
+					</p>
+					<Button
+						variant="outline"
+						disabled={requesting}
+						onclick={() => snx('cancel')}
+					>
+						<XIcon />{copy.cancel}
+					</Button>
+				{:else if pending.pending}
 					<label class="grid gap-1.5 text-xs text-muted-foreground"
 						>{pending.label || pending.step_type || copy.value}<Input
 							bind:ref={stepInput}

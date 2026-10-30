@@ -61,10 +61,11 @@ func (s Server) ListenAndServe() error {
 	refreshRoutingKey()
 	mutationMu.Unlock()
 	go watchRouting(ctx)
-	go watchVPNGUI(ctx, listen, securityHeaders(s.handler(dir)))
+	handler := securityHeaders(s.handler(dir))
+	go watchVPNGUI(ctx, listen, handler)
 	server := &http.Server{
 		Addr:              listen,
-		Handler:           securityHeaders(s.handler(dir)),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	log.Printf("serving Granger GUI from %s on http://%s", dir, listen)
@@ -237,6 +238,11 @@ func requireMutationHeader(next http.Handler) http.Handler {
 			writeErrorText(w, http.StatusForbidden, "missing CSRF request header")
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/snx/") && (strings.HasSuffix(r.URL.Path, "/start") || strings.HasSuffix(r.URL.Path, "/submit") || strings.HasSuffix(r.URL.Path, "/cancel")) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		mutationMu.Lock()
 		defer mutationMu.Unlock()
 		next.ServeHTTP(w, r)
@@ -911,12 +917,11 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		results := []runner.Result{a.snx.Start(up, body.Inputs)}
-		pending := a.snx.PendingStatus()
-		if results[0].OK && !pending.Pending {
-			results = append(results, a.engine.ApplyConfig(cfg).Results...)
+		if a.snx.StartAsync(up, body.Inputs, a.reconcileSNX) == false {
+			writeErrorText(w, http.StatusConflict, "Sign-in is already in progress")
+			return
 		}
-		writeJSON(w, http.StatusOK, apiResponse{OK: allResultsOK(results), Results: results, Data: pending})
+		writeJSON(w, http.StatusAccepted, apiResponse{OK: true, Data: a.snx.PendingStatus()})
 	case "submit":
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w)
@@ -927,11 +932,11 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		results := []runner.Result{a.snx.Submit(body.Inputs)}
-		if results[0].OK && !strings.HasPrefix(results[0].Status, "pending:") {
-			results = append(results, a.engine.ApplyConfig(cfg).Results...)
+		if a.snx.SubmitAsync(body.Inputs, a.reconcileSNX) == false {
+			writeErrorText(w, http.StatusConflict, "Sign-in is already in progress")
+			return
 		}
-		writeJSON(w, http.StatusOK, apiResponse{OK: allResultsOK(results), Results: results, Data: a.snx.PendingStatus()})
+		writeJSON(w, http.StatusAccepted, apiResponse{OK: true, Data: a.snx.PendingStatus()})
 	case "cancel":
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w)
@@ -950,6 +955,20 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeErrorText(w, http.StatusNotFound, "unknown SNX-RS action")
 	}
+}
+
+func (a apiServer) reconcileSNX() []runner.Result {
+	mutationMu.Lock()
+	defer mutationMu.Unlock()
+
+	cfg, err := loadConfig()
+	if err != nil {
+		return []runner.Result{{Title: "Restore SNX routes", Output: err.Error(), OK: false, Status: "error"}}
+	}
+
+	results := a.engine.ApplyConfig(cfg).Results
+	refreshRoutingKey()
+	return results
 }
 
 func (a apiServer) handleRoutingGraph(w http.ResponseWriter, r *http.Request) {

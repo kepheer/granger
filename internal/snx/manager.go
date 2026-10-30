@@ -24,9 +24,12 @@ const (
 )
 
 type Manager struct {
-	mu      sync.Mutex
-	pending *PendingConnect
-	Runner  runner.Runner
+	mu         sync.Mutex
+	pending    *PendingConnect
+	active     *PendingConnect
+	operation  *authOperation
+	lastResult *runner.Result
+	Runner     runner.Runner
 }
 
 type PendingConnect struct {
@@ -42,12 +45,14 @@ type PendingConnect struct {
 }
 
 type PendingStatus struct {
-	Pending     bool   `json:"pending"`
-	Step        string `json:"step,omitempty"`
-	StepType    string `json:"step_type,omitempty"`
-	Label       string `json:"label,omitempty"`
-	Output      string `json:"output,omitempty"`
-	StartedUnix int64  `json:"started_unix,omitempty"`
+	Busy        bool           `json:"busy"`
+	Result      *runner.Result `json:"result,omitempty"`
+	Pending     bool           `json:"pending"`
+	Step        string         `json:"step,omitempty"`
+	StepType    string         `json:"step_type,omitempty"`
+	Label       string         `json:"label,omitempty"`
+	Output      string         `json:"output,omitempty"`
+	StartedUnix int64          `json:"started_unix,omitempty"`
 }
 
 func New(r runner.Runner) *Manager { return &Manager{Runner: r} }
@@ -136,6 +141,11 @@ func connectCommand(ctx context.Context, path string) *exec.Cmd {
 }
 
 func (m *Manager) Start(up config.Upstream, inputs map[string]string) runner.Result {
+	m.Cancel()
+	return m.start(context.Background(), up, inputs)
+}
+
+func (m *Manager) start(parent context.Context, up config.Upstream, inputs map[string]string) runner.Result {
 	if err := CheckConfig(up.Config); err != nil {
 		return runner.Result{Title: "Check SNX-RS config", Command: up.Config, Output: err.Error(), OK: false, Status: "error"}
 	}
@@ -145,7 +155,6 @@ func (m *Manager) Start(up config.Upstream, inputs map[string]string) runner.Res
 	if up.IsEnabled() == false {
 		return runner.Result{Title: "Check SNX-RS connection", Command: "config", Output: "Enable this connection before signing in", OK: false, Status: "error"}
 	}
-	m.Cancel()
 	flow := normalizeFlow(up.AuthFlow)
 	if username := strings.TrimSpace(inputs["username"]); username != "" && up.Config != "" {
 		res := UpdateUsername(up.Config, username)
@@ -161,9 +170,17 @@ func (m *Manager) Start(up config.Upstream, inputs map[string]string) runner.Res
 	if value == "" {
 		return runner.Result{Title: "Start SNX-RS auth", Command: "snxctl connect", Output: "first secret value is empty", OK: false, Status: "error"}
 	}
-	_ = m.Runner.RunSoft("Disconnect previous SNX-RS session", 20*time.Second, nil, "snxctl", "--config-file", up.Config, "disconnect")
+	disconnectCtx, disconnectCancel := context.WithTimeout(parent, 20*time.Second)
+	disconnect := exec.CommandContext(disconnectCtx, "snxctl", "--config-file", up.Config, "disconnect")
+	disconnect.WaitDelay = time.Second
+	_ = disconnect.Run()
+	disconnectCancel()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	if parent.Err() != nil {
+		return runner.Result{Title: "Start SNX-RS auth", OK: false, Status: "canceled", Output: "Sign-in canceled"}
+	}
+
+	ctx, cancel := context.WithCancel(parent)
 	cmd := connectCommand(ctx, up.Config)
 	buf := &runner.SafeBuffer{}
 	ptmx, err := pty.Start(cmd)
@@ -178,6 +195,22 @@ func (m *Manager) Start(up config.Upstream, inputs map[string]string) runner.Res
 	}
 	go copyPTYOutput(ptmx, buf)
 	go p.wait()
+
+	m.mu.Lock()
+	if parent.Err() != nil {
+		m.mu.Unlock()
+		p.kill()
+		return runner.Result{Title: "Start SNX-RS auth", OK: false, Status: "canceled", Output: "Sign-in canceled"}
+	}
+	m.active = p
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		if m.active == p {
+			m.active = nil
+		}
+		m.mu.Unlock()
+	}()
 
 	if !waitForPrompt(p, promptPatterns(up, flow[passwordStep]), stepTimeout(flow[passwordStep], defaultPromptTimeout)) {
 		return m.finishPromptFailure(p, "Start SNX-RS auth", "timeout waiting for first prompt")
@@ -196,6 +229,11 @@ func (m *Manager) Start(up config.Upstream, inputs map[string]string) runner.Res
 	}
 	p.step = next
 	m.mu.Lock()
+	if parent.Err() != nil {
+		m.mu.Unlock()
+		p.kill()
+		return runner.Result{Title: "Start SNX-RS auth", OK: false, Status: "canceled", Output: "Sign-in canceled"}
+	}
 	m.pending = p
 	m.mu.Unlock()
 	return runner.Result{Title: "Start SNX-RS auth", Command: "snxctl connect", Output: SanitizeOutput(buf.String()), OK: true, Status: "pending:" + flow[next].Type}
@@ -208,6 +246,17 @@ func (m *Manager) Submit(inputs map[string]string) runner.Result {
 	if p == nil {
 		return runner.Result{Title: "Submit SNX-RS auth", Command: "snxctl connect", Output: "no pending SNX-RS process", OK: false, Status: "error"}
 	}
+	m.mu.Lock()
+	m.active = p
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		if m.active == p {
+			m.active = nil
+		}
+		m.mu.Unlock()
+	}()
+
 	step := p.flow[p.step]
 	value := strings.TrimSpace(inputValue(inputs, step))
 	if value == "" {
@@ -227,7 +276,9 @@ func (m *Manager) Submit(inputs map[string]string) runner.Result {
 		m.clearPending(p)
 		return m.finishPromptFailure(p, "Submit SNX-RS auth", "timeout waiting for next prompt")
 	}
+	m.mu.Lock()
 	p.step = next
+	m.mu.Unlock()
 	return runner.Result{Title: "Submit SNX-RS auth", Command: "snxctl connect", Output: SanitizeOutput(p.buf.String()), OK: true, Status: "pending:" + p.flow[next].Type}
 }
 
@@ -239,8 +290,18 @@ func (m *Manager) Disconnect(configPath string) runner.Result {
 func (m *Manager) Cancel() {
 	m.mu.Lock()
 	p := m.pending
+	active := m.active
+	op := m.operation
 	m.pending = nil
+	m.operation = nil
+	m.lastResult = nil
+	if op != nil {
+		op.cancel()
+	}
 	m.mu.Unlock()
+	if active != nil {
+		active.kill()
+	}
 	if p != nil {
 		p.kill()
 	}
@@ -249,11 +310,21 @@ func (m *Manager) Cancel() {
 func (m *Manager) PendingStatus() PendingStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.pending != nil && m.operation == nil {
+		select {
+		case <-m.pending.fin:
+			m.pending.cleanup()
+			m.pending = nil
+			m.lastResult = &runner.Result{Title: "SNX-RS sign-in", Output: "Sign-in expired or ended — try again", OK: false, Status: "error"}
+		default:
+		}
+	}
 	if m.pending == nil {
-		return PendingStatus{}
+		return PendingStatus{Busy: m.operation != nil, Result: m.lastResult}
 	}
 	step := m.pending.flow[m.pending.step]
 	return PendingStatus{
+		Busy: m.operation != nil, Result: m.lastResult,
 		Pending: true, Step: stepName(step), StepType: step.Type, Label: step.Label,
 		Output: SanitizeOutput(m.pending.buf.String()), StartedUnix: m.pending.started.Unix(),
 	}
