@@ -167,13 +167,19 @@
 		}
 
 		edges = links.map((edge) => ({
-			id: edge.id,
+			id: edgeId(edge.source, edge.label, edge.target),
 			source: edge.source,
 			target: edge.target,
 			label: edge.label,
 			animated: edge.label === 'fallback',
 			deletable: edge.source.startsWith('rule:')
 		}));
+	}
+
+	function edgeId(source: string, label: unknown, target: string) {
+		const key = JSON.stringify([source, label, target]);
+
+		return `edge-${Array.from(key, (character) => character.codePointAt(0)?.toString(16)).join('-')}`;
 	}
 
 	function nodeClass(type: string) {
@@ -262,7 +268,7 @@
 		edges = [
 			...edges,
 			{
-				id: `${connection.source}->${connection.target}`,
+				id: edgeId(connection.source, 'via', connection.target),
 				source: connection.source,
 				target: connection.target,
 				sourceHandle: connection.sourceHandle,
@@ -331,7 +337,7 @@
 				edges = [
 					...edges,
 					{
-						id: `${selectedId}-${label}-${value}`,
+						id: edgeId(selectedId, label, `upstream:${value}`),
 						source: selectedId,
 						target: `upstream:${value}`,
 						label
@@ -503,7 +509,7 @@
 					onbeforeconnect={beforeConnect}
 					onconnect={connectRule}
 				>
-					<Controls />
+					<Controls role="group" />
 					<MiniMap
 						class="hidden sm:block"
 						pannable
