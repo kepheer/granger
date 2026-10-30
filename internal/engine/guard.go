@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"granger/internal/config"
@@ -28,8 +27,7 @@ func (e Engine) beginRoutingUpdate(cfg config.Config) []runner.Result {
 }
 
 func guardRule(match string) string {
-	search := strings.ReplaceAll(match, "'", "")
-	return "ip rule show | grep -F -- " + netfilter.ShellQuote(search+" lookup "+routingGuardTable) + " | grep -q '^50:' || ip rule add " + match + " table " + routingGuardTable + " priority 50"
+	return netfilter.EnsureIPRule(match, routingGuardTable, "50")
 }
 
 func (e Engine) finishRoutingUpdate() runner.Result {

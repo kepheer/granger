@@ -58,7 +58,7 @@ func (e Engine) applySNICapture(cfg config.Config) []runner.Result {
 	}
 	var script strings.Builder
 	script.WriteString("set -e\nip route replace local 0.0.0.0/0 dev lo table " + sniTable + "\n")
-	script.WriteString("ip rule show | grep -q 'fwmark 0x80000000/0x80000000.*lookup " + sniTable + "' || ip rule add fwmark " + sniCaptureMark + " table " + sniTable + " priority 100\n")
+	script.WriteString(netfilter.EnsureIPRule("fwmark "+sniCaptureMark, sniTable, "100") + "\n")
 	script.WriteString(netfilter.EnsureAppend("mangle", netfilter.MangleChain, "-m", "addrtype", "--dst-type", "LOCAL", "-j", "RETURN") + "\n")
 	for _, name := range sortedOutputNames(cfg) {
 		out := cfg.Outputs[name]

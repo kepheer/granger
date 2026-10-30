@@ -116,3 +116,9 @@ func RouteTableID(name string) int {
 	_, _ = hash.Write([]byte(name))
 	return 10000 + int(hash.Sum32()%20000)
 }
+
+func EnsureIPRule(match, table, priority string) string {
+	selector := match + " table " + ShellQuote(table) + " priority " + ShellQuote(priority)
+	exists := "ip rule show " + selector + " | grep -q ."
+	return exists + " || ip rule add " + selector + " || " + exists
+}

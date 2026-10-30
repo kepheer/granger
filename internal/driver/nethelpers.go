@@ -243,7 +243,7 @@ func normalizeDomain(domain string) string {
 }
 
 func ensureIPRule(ctx ApplyContext, match, table, priority string) runner.Result {
-	return runShell(ctx, "ip rule "+table, "ip rule show | grep -q "+netfilter.ShellQuote(match+".*lookup "+table)+" || ip rule add "+match+" table "+netfilter.ShellQuote(table)+" priority "+netfilter.ShellQuote(priority))
+	return runShell(ctx, "ip rule "+table, netfilter.EnsureIPRule(match, table, priority))
 }
 
 func fallbackForService(explicit, candidate string) string {

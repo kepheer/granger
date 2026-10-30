@@ -1008,6 +1008,12 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 			methodNotAllowed(w)
 			return
 		}
+		release, err := lockRouting(r.Context())
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, err)
+			return
+		}
+		defer release()
 		results := []runner.Result{manager.Disconnect(up.Config)}
 		results = append(results, a.engine.ApplyConfig(cfg).Results...)
 		writeJSON(w, http.StatusOK, apiResponse{OK: allResultsOK(results), Results: results, Data: manager.PendingStatus()})
@@ -1020,6 +1026,11 @@ func (a apiServer) reconcileSNX() []runner.Result {
 	mutationMu.Lock()
 	defer mutationMu.Unlock()
 
+	release, err := lockRouting(context.Background())
+	if err != nil {
+		return []runner.Result{{Title: "Lock routing update", OK: false, Status: "error", Output: err.Error()}}
+	}
+	defer release()
 	cfg, err := loadConfig()
 	if err != nil {
 		return []runner.Result{{Title: "Restore SNX routes", Output: err.Error(), OK: false, Status: "error"}}
@@ -1074,6 +1085,12 @@ func (a apiServer) handleRoutingDryRun(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
+	release, err := lockRouting(r.Context())
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	defer release()
 	cfg, err := loadConfig()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)

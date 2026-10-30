@@ -68,6 +68,12 @@ func (a apiServer) configurationTransaction(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		release, err := lockRouting(r.Context())
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, err)
+			return
+		}
+		defer release()
 		previous, err := loadConfig()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)

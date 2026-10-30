@@ -25,25 +25,33 @@ func watchRouting(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			mutationMu.Lock()
-			cfg, err := loadConfig()
-			if err != nil {
-				mutationMu.Unlock()
-				continue
-			}
-			e := engine.New(runner.New())
-			key := e.RoutingKey(cfg)
-			if routingKey != "" && routingKey != key {
-				plan := e.ApplyConfig(cfg)
-				if allResultsOK(plan.Results) == false {
-					log.Printf("routing reconciliation failed after upstream state change")
-					mutationMu.Unlock()
-					continue
-				}
-				log.Printf("routing reconciled after upstream state change")
-			}
-			routingKey = key
-			mutationMu.Unlock()
+			reconcileRoutingState(ctx)
 		}
 	}
+}
+
+func reconcileRoutingState(ctx context.Context) {
+	mutationMu.Lock()
+	defer mutationMu.Unlock()
+	release, err := lockRouting(ctx)
+	if err != nil {
+		log.Printf("routing lock unavailable: %v", err)
+		return
+	}
+	defer release()
+	cfg, err := loadConfig()
+	if err != nil {
+		return
+	}
+	e := engine.New(runner.New())
+	key := e.RoutingKey(cfg)
+	if routingKey != "" && routingKey != key {
+		plan := e.ApplyConfig(cfg)
+		if allResultsOK(plan.Results) == false {
+			log.Printf("routing reconciliation failed after upstream state change")
+			return
+		}
+		log.Printf("routing reconciled after upstream state change")
+	}
+	routingKey = key
 }

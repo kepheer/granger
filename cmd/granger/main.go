@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"granger/internal/config"
 	"granger/internal/engine"
 	"granger/internal/health"
 	"granger/internal/webgui"
+	"granger/pkg/lockfile"
 	"granger/pkg/runner"
 )
 
@@ -28,6 +32,16 @@ func main() {
 	}
 	e := engine.New(r)
 	h := health.New(r)
+	switch cmd {
+	case "apply", "restore", "restart-output", "restart-upstream", "firewall-cleanup":
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		release, err := lockfile.Acquire(ctx, filepath.Join(filepath.Dir(config.Path), ".routing.lock"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer release()
+	}
 	switch cmd {
 	case "help", "-h", "--help":
 		fmt.Println("usage: granger [validate [FILE]|apply|restore|health|runtime|drivers|serve-gui [ADDR] [DIR]|restart-output NAME|restart-upstream NAME|test-domain DOMAIN]")
