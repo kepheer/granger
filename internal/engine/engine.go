@@ -96,6 +96,7 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 		}
 	}
 	res = append(res, e.applyPersonalFallback(cfg)...)
+	res = append(res, e.applySNXConnectionMarks(cfg)...)
 	for _, name := range upstreamNames {
 		up := cfg.Upstreams[name]
 		if !up.IsEnabled() {
