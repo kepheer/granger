@@ -97,7 +97,7 @@
 			</label>
 			<label class="grid gap-1.5 text-xs text-muted-foreground">
 				{copy.paste}
-				<Textarea bind:value={yaml} class="min-h-80 font-mono text-xs" placeholder="server:&#10;  uplink_if: eth0&#10;outputs: &#123;&#125;&#10;upstreams: &#123;&#125;&#10;rules: []" />
+				<Textarea bind:value={yaml} class="min-h-80 font-mono text-xs" placeholder={'server:\n  uplink_if: eth0\noutputs: {}\nupstreams: {}\nrules: []'} />
 			</label>
 			{#if message}<p role={failed ? 'alert' : 'status'} class="text-sm {failed ? 'text-red-300' : 'text-emerald-300'}">{message}</p>{/if}
 			<Button disabled={saving || yaml.trim() === ''} onclick={() => { message = ''; confirmOpen = true; }}><UploadSimpleIcon />{copy.import}</Button>

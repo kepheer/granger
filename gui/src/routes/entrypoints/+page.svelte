@@ -7,13 +7,17 @@
 	import UpstreamSelect from '$lib/components/upstream-select.svelte';
 	import * as Card from '$lib/components/ui/card';
 	import * as Sheet from '$lib/components/ui/sheet';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import QRCode from 'qrcode';
 	import {
 		DownloadSimpleIcon,
 		PlusIcon,
 		QrCodeIcon,
 		CopyIcon,
-		PowerIcon
+		PowerIcon,
+		DotsThreeIcon,
+		ShieldCheckIcon
 	} from 'phosphor-svelte';
 
 	const copy = {
@@ -28,7 +32,7 @@
 		port: 'Port',
 		clients: 'User',
 		status: 'Status',
-		actions: 'Config',
+		actions: 'Actions',
 		enabled: 'Enabled',
 		disabled: 'Disabled',
 		download: 'Download',
@@ -73,6 +77,8 @@
 	let accessOpen = $state(false);
 	let accessAllowed = $state<string[]>([]);
 	let accessDefault = $state('');
+	let accessTrigger = $state<HTMLButtonElement | null>(null);
+	let actionTriggers = $state<Record<string, HTMLButtonElement | null>>({});
 
 	let createOpen = $state(false);
 	let createOutput = $state('');
@@ -117,7 +123,8 @@
 		}
 	}
 
-	function editAccess(user: string) {
+	function editAccess(user: string, trigger: HTMLButtonElement | null) {
+		accessTrigger = trigger;
 		accessUser = user;
 		const current = users[user];
 		accessAllowed =
@@ -290,7 +297,7 @@
 		}
 	}
 
-	async function toggleProfile(user: string, disabled: boolean) {
+	async function toggleProfile(user: string, disabled: boolean, trigger: HTMLButtonElement | null) {
 		if (profileBusy !== '') {
 			return;
 		}
@@ -321,6 +328,8 @@
 			message = error instanceof Error ? error.message : String(error);
 		} finally {
 			profileBusy = '';
+			await tick();
+			trigger?.focus();
 		}
 	}
 
@@ -447,23 +456,23 @@
 					>
 						<div
 							role="row"
-							class="grid min-w-[900px] grid-cols-[1fr_.75fr_.7fr_.7fr_1.9fr] bg-white/[0.035] px-4 py-2 text-xs font-medium text-muted-foreground"
+							class="grid min-w-[760px] grid-cols-[minmax(150px,1fr)_minmax(120px,.9fr)_minmax(116px,.8fr)_96px_240px] bg-white/[0.035] px-4 py-2 text-xs font-medium text-muted-foreground"
 						>
 							<div role="columnheader">{copy.name}</div>
 							<div role="columnheader">{copy.clients}</div>
 							<div role="columnheader">IP</div>
 							<div role="columnheader">{copy.status}</div>
-							<div role="columnheader">{copy.actions}</div>
+							<div role="columnheader" class="text-right">{copy.actions}</div>
 						</div>
 						{#each entrypoint.clients as client}
 							<div
 								role="row"
-								class="grid min-w-[900px] grid-cols-[1fr_.75fr_.7fr_.7fr_1.9fr] items-center border-t border-border px-4 py-3 text-sm"
+								class="grid min-w-[760px] grid-cols-[minmax(150px,1fr)_minmax(120px,.9fr)_minmax(116px,.8fr)_96px_240px] items-center border-t border-border px-4 py-3 text-sm"
 							>
-								<div role="rowheader" class="font-medium text-white">
+								<div role="rowheader" class="break-all font-medium text-white">
 									{client.name}
 								</div>
-								<div role="cell" class="text-muted-foreground">
+								<div role="cell" class="break-words text-muted-foreground">
 									{client.displayName}
 								</div>
 								<div role="cell" class="font-mono text-xs text-white/80">
@@ -477,48 +486,108 @@
 								>
 									{client.status === 'enabled' ? copy.enabled : copy.disabled}
 								</div>
-								<div role="cell" class="flex flex-wrap gap-1">
-									<Button
-										disabled={client.user === '' || profileBusy !== ''}
-										size="xs"
-										variant="outline"
-										onclick={() => editAccess(client.user)}>Access</Button
-									>
+								<div
+									role="cell"
+									class="flex items-center justify-end gap-1.5 whitespace-nowrap"
+								>
 									<Button
 										disabled={client.status !== 'enabled'}
-										size="xs"
-										variant="ghost"
+										size="sm"
 										href={`/api/profiles/${entrypoint.name}/${client.name}`}
-										><DownloadSimpleIcon />{copy.download}</Button
 									>
-									<Button
-										disabled={client.status !== 'enabled'}
-										size="xs"
-										variant="ghost"
-										onclick={() => copyProfile(entrypoint.name, client.name)}
-										><CopyIcon />{copy.copy}</Button
-									>
-									<Button
-										disabled={client.status !== 'enabled'}
-										size="xs"
-										variant="outline"
-										onclick={() => showQR(entrypoint.name, client.name)}
-										><QrCodeIcon />{copy.qr}</Button
-									>
-									<Button
-										disabled={client.user === '' || profileBusy !== ''}
-										size="xs"
-										variant={client.status === 'enabled'
-											? 'destructive'
-											: 'outline'}
-										onclick={() =>
-											toggleProfile(client.user, client.status === 'enabled')}
-										><PowerIcon />{profileBusy === client.user
-											? 'Applying…'
-											: client.status === 'enabled'
-												? copy.disable
-												: copy.enable}</Button
-									>
+										<DownloadSimpleIcon aria-hidden="true" />{copy.download}
+									</Button>
+									<Tooltip.Provider delayDuration={250}>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														disabled={client.status !== 'enabled'}
+														size="icon-sm"
+														variant="ghost"
+														aria-label={`Copy config for ${client.displayName}`}
+														onclick={() =>
+															copyProfile(entrypoint.name, client.name)}
+													>
+														<CopyIcon aria-hidden="true" />
+													</Button>
+												{/snippet}
+											</Tooltip.Trigger>
+											<Tooltip.Content>Copy config</Tooltip.Content>
+										</Tooltip.Root>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														disabled={client.status !== 'enabled'}
+														size="icon-sm"
+														variant="ghost"
+														aria-label={`QR code for ${client.displayName}`}
+														onclick={() => showQR(entrypoint.name, client.name)}
+													>
+														<QrCodeIcon aria-hidden="true" />
+													</Button>
+												{/snippet}
+											</Tooltip.Trigger>
+											<Tooltip.Content>QR code</Tooltip.Content>
+										</Tooltip.Root>
+									</Tooltip.Provider>
+									<span class="mx-0.5 h-4 w-px bg-border" aria-hidden="true"
+									></span>
+									<DropdownMenu.Root>
+										<DropdownMenu.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													disabled={client.user === '' || profileBusy !== ''}
+													size="icon-sm"
+													variant="ghost"
+													aria-label={`More actions for ${client.displayName}`}
+													bind:ref={
+													() => actionTriggers[`${entrypoint.name}/${client.name}`] ?? null,
+													(value) => { actionTriggers[`${entrypoint.name}/${client.name}`] = value; }
+												}
+												>
+													<DotsThreeIcon weight="bold" aria-hidden="true" />
+												</Button>
+											{/snippet}
+										</DropdownMenu.Trigger>
+										<DropdownMenu.Content
+											align="end"
+											onCloseAutoFocus={(event) => {
+												if (accessOpen) {
+													event.preventDefault();
+												}
+											}}
+										>
+											<DropdownMenu.Item
+												onSelect={() => editAccess(client.user, actionTriggers[`${entrypoint.name}/${client.name}`] ?? null)}
+											>
+												<ShieldCheckIcon aria-hidden="true" />Manage access
+											</DropdownMenu.Item>
+											<DropdownMenu.Separator
+												class="-mx-1 my-1 h-px bg-border"
+											/>
+											<DropdownMenu.Item
+												variant={client.status === 'enabled'
+													? 'destructive'
+													: 'default'}
+												onSelect={() =>
+													toggleProfile(
+														client.user,
+														client.status === 'enabled',
+														actionTriggers[`${entrypoint.name}/${client.name}`] ?? null
+													)}
+											>
+												<PowerIcon aria-hidden="true" />{client.status ===
+												'enabled'
+													? copy.disable
+													: copy.enable}
+											</DropdownMenu.Item>
+										</DropdownMenu.Content>
+									</DropdownMenu.Root>
 								</div>
 							</div>
 						{:else}<p class="p-4 text-sm text-muted-foreground">
@@ -708,7 +777,10 @@
 </Sheet.Root>
 
 <Sheet.Root bind:open={accessOpen}>
-	<Sheet.Content class="w-full sm:max-w-md">
+	<Sheet.Content class="w-full sm:max-w-md" onCloseAutoFocus={(event) => {
+		event.preventDefault();
+		accessTrigger?.focus();
+	}}>
 		<Sheet.Header
 			><Sheet.Title>User access</Sheet.Title><Sheet.Description
 				>{users[accessUser]?.display_name ?? accessUser}</Sheet.Description
