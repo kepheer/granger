@@ -24,3 +24,12 @@ func TestDefaultAuthFlowIsPasswordThenSMS(t *testing.T) {
 		t.Fatalf("default flow = %#v", flow)
 	}
 }
+
+func TestDynamicIDPromptIsRecognized(t *testing.T) {
+	if hasDynamicIDPrompt("Verification Code:\nDynamicID password:") == false {
+		t.Fatal("DynamicID prompt was not recognized")
+	}
+	if hasDynamicIDPrompt("Verification Code:") {
+		t.Fatal("ordinary verification prompt was recognized as DynamicID")
+	}
+}

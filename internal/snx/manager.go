@@ -377,9 +377,18 @@ func (m *Manager) waitFinished(p *PendingConnect, title string, timeout time.Dur
 		p.cleanup()
 		return runner.Result{Title: title, Command: "snxctl connect", Output: SanitizeOutput(p.buf.String()), OK: err == nil, Status: finishStatus(err)}
 	case <-time.After(timeout):
+		output := SanitizeOutput(p.buf.String())
 		p.kill()
-		return runner.Result{Title: title, Command: "snxctl connect", Output: SanitizeOutput(p.buf.String()), OK: false, Status: "timeout"}
+		if hasDynamicIDPrompt(output) {
+			return runner.Result{Title: title, Command: "snxctl connect", Output: output + "\nThis gateway requires a legacy DynamicID password from the web portal; an SMS code alone is not supported by this SNX-RS login mode", OK: false, Status: "unsupported_dynamicid"}
+		}
+		return runner.Result{Title: title, Command: "snxctl connect", Output: output, OK: false, Status: "timeout"}
 	}
+}
+
+func hasDynamicIDPrompt(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "dynamicid password") || strings.Contains(lower, "dynamicid one time password")
 }
 
 func (p *PendingConnect) wait() {
