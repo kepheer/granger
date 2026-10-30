@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { stateLabel } from '$lib/labels';
 	import ConfirmAction from '$lib/components/confirm-action.svelte';
 	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
@@ -25,23 +26,23 @@
 	};
 
 	const copy = {
-		description: 'Inspect runtime state, control availability, and complete interactive authentication when a tunnel requires it.',
+		description: 'Connection settings and status',
 		back: 'Back',
 		enable: 'Enable upstream',
 		disable: 'Disable upstream',
 		remove: 'Delete upstream',
 		config: 'Configuration',
-		state: 'State',
-		dns: 'DNS resolvers',
-		snx: 'SNX-RS authentication',
+		state: 'Status',
+		dns: 'DNS servers',
+		snx: 'SNX-RS sign-in',
 		username: 'Username',
 		password: 'Password',
-		start: 'Start authentication',
-		submit: 'Submit step',
+		start: 'Sign in',
+		submit: 'Continue',
 		cancel: 'Cancel',
 		disconnect: 'Disconnect',
-		value: 'Code or value',
-		output: 'Command output'
+		value: 'Verification code',
+		output: 'Connection log'
 	} as const;
 
 	const name = page.params.name ?? '';
@@ -168,7 +169,7 @@
 	<title>{name} · Granger</title>
 </svelte:head>
 
-<section class="max-w-5xl space-y-5">
+<section class="w-full min-w-0 space-y-5">
 	<Button href="/upstreams" variant="ghost"><ArrowLeftIcon />{copy.back}</Button>
 
 	<div class="flex flex-col justify-between gap-4 md:flex-row md:items-end">
@@ -176,7 +177,7 @@
 			<h1 class="font-display text-2xl font-bold text-white">{name}</h1>
 			<p class="mt-2 max-w-3xl text-sm text-muted-foreground">{copy.description}</p>
 		</div>
-		<div class="flex flex-wrap gap-2">
+		<div class="flex shrink-0 flex-wrap gap-2">
 			<Button disabled={upstream === null || busy} variant="outline" onclick={toggle}><PowerIcon />{upstream?.enabled === false ? copy.enable : copy.disable}</Button>
 			<Button disabled={upstream === null || busy} variant="destructive" onclick={() => { message = ''; removeOpen = true; }}><TrashIcon />{copy.remove}</Button>
 		</div>
@@ -185,33 +186,33 @@
 	{#if message}<p role="alert" class="rounded-md border border-border bg-white/[0.03] p-3 text-sm text-red-300">{message}</p>{/if}
 
 	<div class="grid gap-4 md:grid-cols-2">
-		<Card.Root class="rounded-lg">
+		<Card.Root class="min-w-0 rounded-lg">
 			<Card.Header><Card.Title>{copy.config}</Card.Title></Card.Header>
-			<Card.Content class="space-y-2 text-sm text-muted-foreground">
-				<div>type: <span class="font-mono text-white">{upstream?.type ?? '—'}</span></div>
-				<div>interface: <span class="font-mono text-white">{upstream?.interface ?? '—'}</span></div>
-				<div>path: <span class="font-mono text-white">{upstream?.config ?? '—'}</span></div>
+			<Card.Content class="space-y-2 text-sm break-words text-muted-foreground">
+				<div>Protocol: <span class="font-mono text-white">{upstream?.type ?? '—'}</span></div>
+				<div>Interface: <span class="font-mono text-white">{upstream?.interface ?? '—'}</span></div>
+				<div>Config file: <span class="font-mono text-white">{upstream?.config ?? '—'}</span></div>
 			</Card.Content>
 		</Card.Root>
-		<Card.Root class="rounded-lg">
+		<Card.Root class="min-w-0 rounded-lg">
 			<Card.Header><Card.Title>{copy.state}</Card.Title></Card.Header>
-			<Card.Content class="space-y-2 text-sm text-muted-foreground">
-				<div>Availability: <span class={upstream === null ? 'text-muted-foreground' : upstream.enabled === false ? 'text-red-300' : 'text-emerald-300'}>{upstream === null ? 'Unavailable' : upstream.enabled === false ? 'Disabled' : 'Enabled'}</span></div>
-				<div>Runtime: <span class={runtime?.State === 'healthy' ? 'text-emerald-300' : 'text-amber-300'}>{runtime?.State ?? (upstream === null ? 'Unavailable' : 'Unknown')}</span></div>
+			<Card.Content class="space-y-2 text-sm break-words text-muted-foreground">
+				<div>Access: <span class={upstream === null ? 'text-muted-foreground' : upstream.enabled === false ? 'text-red-300' : 'text-emerald-300'}>{upstream === null ? 'Unavailable' : upstream.enabled === false ? 'Disabled' : 'Enabled'}</span></div>
+				<div>Connection: <span class={runtime?.State === 'healthy' ? 'text-emerald-300' : 'text-amber-300'}>{runtime?.State === undefined ? upstream === null ? 'Unavailable' : 'Unknown' : stateLabel(runtime.State)}</span></div>
 				{#if runtime?.Summary}<p>{runtime.Summary}</p>{/if}
-				<div>{copy.dns}: <span class="font-mono text-white">{upstream?.dns?.join(', ') || 'default'}</span></div>
-				<div>service: <span class="font-mono text-white">{runtime?.Service || upstream?.service || 'Not required'}</span></div>
+				<div>{copy.dns}: <span class="font-mono text-white">{upstream?.dns?.join(', ') || 'System default'}</span></div>
+				<div>Service: <span class="font-mono text-white">{runtime?.Service || upstream?.service || 'Not required'}</span></div>
 			</Card.Content>
 		</Card.Root>
 	</div>
 
 	{#if upstream?.type === 'snx-rs'}
-		<Card.Root class="rounded-lg">
+		<Card.Root class="min-w-0 rounded-lg">
 			<Card.Header><Card.Title>{copy.snx}</Card.Title></Card.Header>
 			<Card.Content class="space-y-4">
 				{#if pending.pending}
 					<label class="grid gap-1.5 text-xs text-muted-foreground">{pending.label || pending.step_type || copy.value}<Input bind:ref={stepInput} bind:value={value} type="password" autocomplete="one-time-code" /></label>
-					<div class="flex flex-wrap gap-2">
+					<div class="flex shrink-0 flex-wrap gap-2">
 						<Button disabled={authenticating || value.trim() === ''} onclick={() => snx('submit', { [pending.step ?? pending.step_type ?? 'value']: value })}><PaperPlaneTiltIcon />{copy.submit}</Button>
 						<Button disabled={authenticating} variant="outline" onclick={() => snx('cancel')}><XIcon />{copy.cancel}</Button>
 					</div>
@@ -220,7 +221,7 @@
 						<label class="grid gap-1.5 text-xs text-muted-foreground">{copy.username}<Input bind:ref={usernameInput} bind:value={username} autocomplete="username" /></label>
 						<label class="grid gap-1.5 text-xs text-muted-foreground">{copy.password}<Input bind:value={password} type="password" autocomplete="current-password" /></label>
 					</div>
-					<div class="flex flex-wrap gap-2">
+					<div class="flex shrink-0 flex-wrap gap-2">
 						<Button disabled={authenticating || username.trim() === '' || password === ''} onclick={() => snx('start', { username, password })}><PowerIcon />{copy.start}</Button>
 						<Button disabled={authenticating} variant="outline" onclick={() => snx('disconnect')}><XIcon />{copy.disconnect}</Button>
 					</div>
@@ -231,4 +232,4 @@
 	{/if}
 </section>
 
-<ConfirmAction bind:open={removeOpen} title={`Delete upstream ${name}?`} description="Remove this upstream from Granger. Installed protocol packages will remain available. Connections referenced by routing rules or users cannot be deleted." action="Delete upstream" danger busy={busy} error={message} onconfirm={remove} />
+<ConfirmAction bind:open={removeOpen} title={`Delete upstream ${name}?`} description="Delete this connection and keep its driver installed. Remove it from routing rules and user access first" action="Delete upstream" danger busy={busy} error={message} onconfirm={remove} />

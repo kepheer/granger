@@ -32,24 +32,24 @@
 	const copy = {
 		title: 'Upstreams',
 		description:
-			'Upstreams are exits. Granger sends selected traffic through direct uplink, VPN tunnels, Xray, or sing-box according to bypass rules.',
+			'Choose where user traffic leaves the server',
 		add: 'Add upstream',
 		name: 'Name',
 		type: 'Type',
 		iface: 'Interface',
 		config: 'Config',
-		status: 'Availability',
-		enabled: 'enabled',
-		disabled: 'disabled',
-		pending: 'pending',
-		hint: 'Click an upstream to inspect routes, DNS, service state, and access controls.',
-		packages: 'Protocol packages',
+		status: 'Status',
+		enabled: 'Enabled',
+		disabled: 'Disabled',
+		pending: 'Pending',
+		hint: 'Select a connection to view its settings',
+		packages: 'Drivers',
 		packagesHint:
-			'Install only runtime packages here. Tunnel configs, interfaces, routes, and access rules are configured separately.',
+			'Install a driver before adding a connection',
 		installed: 'Installed',
 		install: 'Install',
-		manual: 'Manual source required',
-		unavailable: 'Could not reach the server. Refresh to try again.',
+		manual: 'Manual installation',
+		unavailable: 'Cannot reach the server — try Refresh',
 		refresh: 'Refresh',
 		installLog: 'Installation log'
 	} as const;
@@ -125,7 +125,7 @@
 		}
 
 		installing = name;
-		protocolMessage = 'Installing driver. This may take several minutes…';
+		protocolMessage = 'Installing driver — this may take a few minutes…';
 		protocolFailed = false;
 		protocolResults = [];
 		try {
@@ -141,7 +141,7 @@
 			}
 			protocolFailed = response.ok === false || body.ok !== true;
 			protocolResults = body.results ?? body.data?.commands ?? [];
-			protocolMessage = body.error ?? body.data?.summary ?? '';
+			protocolMessage = body.error ?? (body.data?.installed === true ? 'Driver installed' : body.data?.summary ?? '');
 		} catch {
 			protocolFailed = true;
 			protocolMessage = copy.unavailable;
@@ -202,13 +202,13 @@
 				</div>
 			{/if}
 			<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-				{#if protocolsLoading}<p role="status" class="text-sm text-muted-foreground">Loading driver status…</p>{/if}
+				{#if protocolsLoading}<p role="status" class="text-sm text-muted-foreground">Loading drivers…</p>{/if}
 			{#each protocols as protocol}
 					<div class="rounded-lg border border-border bg-card/60 p-4">
 						<div class="flex items-start justify-between gap-3">
 							<div>
 								<div class="font-medium text-white">{protocol.display_name}</div>
-								<div class="mt-1 text-xs text-muted-foreground">{protocol.summary}</div>
+								{#if protocol.installed === false && protocol.summary !== 'Not installed'}<div class="mt-1 text-xs text-muted-foreground">{protocol.summary}</div>{/if}
 							</div>
 							<span
 								class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs {protocol.installed
@@ -221,7 +221,7 @@
 									<CheckCircleIcon class="size-3.5" />{copy.installed}
 								{:else}
 									<WarningCircleIcon class="size-3.5" />{protocol.installable
-										? protocol.state
+										? protocol.state === 'failed' ? 'Installation failed' : 'Not installed'
 										: copy.manual}
 								{/if}
 							</span>
@@ -250,7 +250,7 @@
 		<Card.Content>
 			{#if upstreamError}<p role="alert" class="mb-3 text-sm text-red-300">{upstreamError}</p>{/if}
 			{#if upstreamsLoading}<p role="status" class="mb-3 text-sm text-muted-foreground">Loading upstreams…</p>{/if}
-			{#if upstreamsLoading === false && upstreamError === '' && upstreams.length === 0}<p class="mb-3 text-sm text-muted-foreground">No upstreams configured. Add an outgoing connection to route user traffic.</p>{/if}
+			{#if upstreamsLoading === false && upstreamError === '' && upstreams.length === 0}<p class="mb-3 text-sm text-muted-foreground">No upstreams yet — add a connection to route traffic</p>{/if}
 			{#if upstreams.length > 0}
 			<div class="overflow-x-auto rounded-lg border border-border">
 				<div class="grid min-w-[760px] grid-cols-[1.1fr_.9fr_.9fr_1.8fr_.8fr] bg-white/[0.035] px-4 py-2 text-xs font-medium text-muted-foreground">

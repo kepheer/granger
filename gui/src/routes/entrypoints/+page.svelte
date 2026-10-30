@@ -19,7 +19,7 @@
 	const copy = {
 		title: 'Entrypoints',
 		description:
-			'Entrypoints are client-facing connection profiles. Granger issues configs, controls access by user, and keeps protocol defaults friendly.',
+			'Manage user connections, profiles and access',
 		add: 'Add entrypoint',
 		name: 'Profile ID',
 		type: 'Type',
@@ -29,8 +29,8 @@
 		clients: 'User',
 		status: 'Status',
 		actions: 'Config',
-		enabled: 'enabled',
-		disabled: 'disabled',
+		enabled: 'Enabled',
+		disabled: 'Disabled',
 		download: 'Download',
 		copy: 'Copy',
 		qr: 'QR code',
@@ -220,7 +220,7 @@
 				);
 			}
 			createOpen = false;
-			createSuccess = `${displayName} and their connection profile were created`;
+			createSuccess = `User ${displayName} created`;
 			userNames[output] = '';
 			await loadEntrypoints();
 		} catch (error) {
@@ -404,8 +404,7 @@
 		{#if loaded && entrypoints.length === 0 && message === ''}<p
 				class="rounded-lg border border-border p-6 text-sm text-muted-foreground"
 			>
-				No entrypoints configured. Add your first entrypoint to issue client
-				profiles.
+				Add an entrypoint to start creating user profiles
 			</p>{/if}
 		{#each entrypoints as entrypoint}
 			<Card.Root class="rounded-lg">
@@ -523,8 +522,7 @@
 								</div>
 							</div>
 						{:else}<p class="p-4 text-sm text-muted-foreground">
-								No profiles issued yet. Use Create user to generate a connection
-								config.
+								No users yet — select Create user to add one
 							</p>
 						{/each}
 					</div>
@@ -550,7 +548,7 @@
 		<Sheet.Header class="pr-12">
 			<Sheet.Title>Create user</Sheet.Title>
 			<Sheet.Description
-				>Create a connection profile for {createOutput}</Sheet.Description
+				>New user on {createOutput}</Sheet.Description
 			>
 		</Sheet.Header>
 		{#if createOutput !== ''}
@@ -614,7 +612,7 @@
 							id="create-upstream-help"
 							class="mb-3 text-sm text-muted-foreground"
 						>
-							Choose which outgoing interfaces this user can use.
+							Choose the connections this user can use
 						</p>
 						{#each upstreamNames as upstream}
 							<div
@@ -638,7 +636,7 @@
 						{#if upstreamNames.length === 0}<p
 								class="text-sm text-muted-foreground"
 							>
-								No upstreams are configured.
+								No upstreams yet
 							</p>{/if}
 					</fieldset>
 					<div class="grid gap-2">
@@ -652,17 +650,14 @@
 							aria-describedby="create-default-help"
 						/>
 						<p id="create-default-help" class="text-sm text-muted-foreground">
-							If a shared rule selects an unavailable or forbidden upstream,
-							traffic uses this user's allowed default. Without an allowed
-							default, that traffic is blocked.
+							Unavailable or restricted routes use this default. Traffic is blocked if no allowed default is available
 						</p>
 					</div>
 					{#if createAllowed(createOutput).length === 0}<p
 							role="status"
 							class="text-sm text-amber-200"
 						>
-							No upstreams selected. This user will have no upstream network
-							access.
+							Select at least one upstream to allow network access
 						</p>{/if}
 					{#if busy === createOutput}<p
 							bind:this={createProgress}
@@ -670,8 +665,7 @@
 							role="status"
 							class="text-sm text-muted-foreground"
 						>
-							Creating user and profile. Creation continues if you close this
-							panel.
+							Creating user… You can close this panel while it finishes
 						</p>{/if}
 				</div>
 				<div
@@ -699,7 +693,7 @@
 	<Sheet.Content class="w-full sm:max-w-md">
 		<Sheet.Header>
 			<Sheet.Title>{copy.qr}: {qrName}</Sheet.Title>
-			<Sheet.Description>Personal connection profile</Sheet.Description>
+			<Sheet.Description>Scan to connect</Sheet.Description>
 		</Sheet.Header>
 		{#if qrImage}
 			<div class="mx-4 mb-6 mt-2 overflow-y-auto rounded-md bg-white p-4">
@@ -749,12 +743,10 @@
 					{message}
 				</p>{/if}
 			<p class="mt-4 text-xs text-muted-foreground">
-				When a shared rule selects an unchecked upstream, traffic uses this
-				user's allowed default route. If no allowed default is available,
-				traffic is blocked. Leave all unchecked to block every upstream.
+				Restricted routes use the allowed default. Traffic is blocked if no allowed default is available. Uncheck all upstreams to block network access
 			</p>
 			<Button disabled={accessSaving} class="mt-6" onclick={saveAccess}
-				>Apply access</Button
+				>Save access</Button
 			>
 		</div></Sheet.Content
 	>

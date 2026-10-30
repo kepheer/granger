@@ -10,7 +10,7 @@
 	const copy = {
 		title: 'Add entrypoint',
 		description:
-			'Create a managed entrypoint, then issue an individual connection profile for each user. Xray and sing-box use Trojan with verified TLS by default.',
+			'Choose how users connect to your server',
 		back: 'Back',
 		type: 'Protocol',
 		name: 'Name',
@@ -162,7 +162,7 @@
 	<title>{copy.title} · Granger</title>
 </svelte:head>
 
-<section class="max-w-3xl space-y-5">
+<section class="w-full min-w-0 space-y-5">
 	<Button href="/entrypoints" variant="ghost"
 		><ArrowLeftIcon />{copy.back}</Button
 	>
@@ -207,20 +207,20 @@
 					/></label
 				>
 			</div>
-			<p class="text-xs text-muted-foreground">Server configuration and individual client credentials are generated automatically.</p>
+			<p class="text-xs text-muted-foreground">Granger generates the server config and user profiles</p>
 			{#if selected.type !== 'wireguard'}
 				<details class="rounded-md border border-border p-3">
-					<summary class="cursor-pointer text-sm">Import an existing configuration (advanced)</summary>
+					<summary class="cursor-pointer text-sm">Use an existing config</summary>
 					<div class="mt-4 space-y-4">
 				<label class="grid gap-1.5 text-xs text-muted-foreground"
-					>Existing server configuration (optional)<Textarea
+					>Server config (optional)<Textarea
 						bind:value={inlineConfig}
 						class="min-h-48 font-mono text-xs"
 					/></label
 				>
 				{#if inlineConfig.trim() !== ''}<label
 						class="grid gap-1.5 text-xs text-muted-foreground"
-						>Existing systemd service (optional)<Input
+						>Systemd service (optional)<Input
 							bind:value={service}
 						/></label
 					>{/if}
@@ -229,9 +229,9 @@
 			{/if}
 			{#if protocolStatusLoaded && installed.includes(selected.type) === false}
 				<p class="text-sm text-muted-foreground">
-					Install this protocol before creating an entrypoint. <a
+					Install the driver to continue <a
 						class="underline"
-						href="/upstreams">Open protocol installation</a
+						href="/upstreams">View drivers</a
 					>
 				</p>
 			{/if}

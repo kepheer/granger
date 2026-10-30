@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { stateLabel } from '$lib/labels';
 	import { onMount } from 'svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { t } from '$lib/i18n';
@@ -35,7 +36,7 @@
 	};
 
 	const copy = {
-		subtitle: 'Live host state, configured routes, and tunnel health.',
+		subtitle: 'Server usage and connection status',
 		cpu: 'CPU load',
 		memory: 'Memory',
 		disk: 'Disk',
@@ -44,11 +45,11 @@
 		rules: 'Routing rules',
 		upstreams: 'Upstreams',
 		outputs: 'Entrypoints',
-		users: 'Issued profiles',
+		users: 'User profiles',
 		runtime: 'Tunnels and services',
-		empty: 'No tunnels configured yet.',
+		empty: 'No connections yet',
 		loading: 'Loading tunnel status…',
-		unavailable: 'Runtime metrics are unavailable while the backend is not connected.'
+		unavailable: 'Cannot load server status'
 	} as const;
 
 	let dashboard = $state<Dashboard | null>(null);
@@ -202,7 +203,7 @@
 					<div class="grid gap-1 rounded-md border border-border bg-white/[0.025] px-3 py-3 text-sm md:grid-cols-[1fr_.7fr_.7fr_1.5fr]">
 						<div class="font-medium text-white">{item.Name}</div>
 						<div class="text-muted-foreground">{item.Type}</div>
-						<div class={stateClass(item.State)}>{item.State}</div>
+						<div class={stateClass(item.State)}>{stateLabel(item.State)}</div>
 						<div class="text-muted-foreground">{item.Summary}</div>
 					</div>
 				{/each}
@@ -211,8 +212,8 @@
 				<div class="grid gap-1 rounded-md border border-border bg-white/[0.025] px-3 py-3 text-sm md:grid-cols-[1fr_.7fr_.7fr_1.5fr]">
 					<div class="font-medium text-white">{service.name}</div>
 					<div class="text-muted-foreground">systemd</div>
-					<div class={stateClass(service.active ? 'active' : 'broken')}>{service.active ? 'active' : 'inactive'}</div>
-					<div class="text-muted-foreground">{service.state}</div>
+					<div class={stateClass(service.active ? 'active' : 'broken')}>{service.active ? 'Running' : 'Stopped'}</div>
+					<div class="text-muted-foreground">{stateLabel(service.state)}</div>
 				</div>
 			{/each}
 		</Card.Content>

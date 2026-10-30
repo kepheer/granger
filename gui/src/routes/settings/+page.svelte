@@ -8,17 +8,17 @@
 	import { DownloadSimpleIcon, UploadSimpleIcon } from 'phosphor-svelte';
 
 	const copy = {
-		description: 'Export the declarative Granger configuration or import a reviewed YAML file. Import creates a timestamped backup and applies the new routing state immediately.',
+		description: 'Download or restore your Granger settings',
 		exportTitle: 'Export configuration',
-		exportDescription: 'Download the active /etc/granger/granger.yaml file.',
+		exportDescription: 'Save the current settings as a YAML file',
 		export: 'Download YAML',
 		importTitle: 'Import configuration',
-		importDescription: 'Paste YAML or choose a local file. Unknown fields and invalid references are rejected before the active config is changed.',
+		importDescription: 'Paste your settings or choose a YAML file',
 		paste: 'Configuration YAML',
 		file: 'Choose YAML file',
 		import: 'Import and apply',
 		confirm: 'Import this configuration and apply routing changes now?',
-		success: 'Configuration imported and applied.',
+		success: 'Settings imported and applied',
 		error: 'Import failed'
 	} as const;
 
@@ -69,7 +69,7 @@
 	<title>{t('settings.title')} · Granger</title>
 </svelte:head>
 
-<section class="max-w-4xl space-y-5">
+<section class="w-full min-w-0 space-y-5">
 	<div>
 		<h1 class="font-display text-2xl font-bold text-white">{t('settings.title')}</h1>
 		<p class="mt-2 max-w-3xl text-sm text-muted-foreground">{copy.description}</p>
@@ -105,4 +105,4 @@
 	</Card.Root>
 </section>
 
-<ConfirmAction bind:open={confirmOpen} title="Import configuration?" description="This replaces the active configuration and applies its routes immediately. A backup of the current configuration will be saved." action="Import and apply" busy={saving} error={failed ? message : ''} onconfirm={importConfig} />
+<ConfirmAction bind:open={confirmOpen} title="Import configuration?" description="Replace the current settings and apply routes now, keeping a backup of the current settings" action="Import and apply" busy={saving} error={failed ? message : ''} onconfirm={importConfig} />

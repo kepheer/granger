@@ -46,25 +46,25 @@
 	const copy = {
 		title: 'Routing',
 		description:
-			'Entry points connect to issued users. Shared rules and personal default routes choose outgoing connections. Select a node in the graph or the list to edit it.',
-		addNode: 'Add route rule',
-		save: 'Save graph',
-		dryRun: 'Dry run',
-		selected: 'Selected node',
-		noSelection: 'Select a node in the graph or from the list.',
-		label: 'Label',
+			'Choose where user traffic goes',
+		addNode: 'Add rule',
+		save: 'Save routing',
+		dryRun: 'Preview changes',
+		selected: 'Selected item',
+		noSelection: 'Select an item in the graph or list',
+		label: 'Name',
 		type: 'Type',
 		domains: 'Domains',
-		cidrs: 'CIDRs',
-		dns: 'DNS resolvers',
-		via: 'Via / target',
-		fallback: 'Fallback upstream',
+		cidrs: 'IP ranges (CIDR)',
+		dns: 'DNS servers',
+		via: 'Send through',
+		fallback: 'Backup connection',
 		defaultUpstream: 'Default route',
-		blockFallback: 'Block traffic when fallback is unavailable',
-		statusReady: 'Graph ready',
-		statusSaved: 'Graph saved and applied',
-		statusDryRun: 'Dry-run finished',
-		statusError: 'Graph action failed'
+		blockFallback: 'Block traffic if the backup is unavailable',
+		statusReady: 'Routing loaded',
+		statusSaved: 'Routing saved',
+		statusDryRun: 'Preview ready',
+		statusError: 'Could not update routing'
 	} as const;
 
 	let nodes = $state<Node[]>([]);
@@ -188,13 +188,13 @@
 		const name = newRuleName.trim();
 		if (/^[A-Za-z0-9_.-]+$/.test(name) === false) {
 			status =
-				'Enter a rule name using letters, numbers, dots, underscores or hyphens.';
+				'Use letters, numbers, dots, underscores or hyphens in the rule name';
 			return;
 		}
 
 		const next = `rule:${name}`;
 		if (nodes.some((node) => node.id === next)) {
-			status = 'A rule with this name already exists.';
+			status = 'This rule name is already in use';
 			return;
 		}
 
@@ -216,7 +216,7 @@
 		selectedId = next;
 		newRuleName = '';
 		status =
-			'Rule added. Choose its upstream and destinations, then save the graph.';
+			'Choose destinations and an upstream for the new rule, then save routing';
 	}
 
 	function beforeConnect(connection: Connection) {
@@ -232,7 +232,7 @@
 			target.id.startsWith('upstream:') === false
 		) {
 			status =
-				'Connect a route rule to an upstream. Set fallback through the fallback field.';
+				'Connect a rule to an upstream and set a backup if needed';
 			return false;
 		}
 
@@ -274,7 +274,7 @@
 			};
 		});
 		selectedId = connection.source;
-		status = 'Route target updated. Save the graph to apply it.';
+		status = 'Save routing to apply the new connection';
 	}
 
 	function selectNode(id: string) {
@@ -517,15 +517,14 @@
 							newRuleName.trim() === ''}
 						variant="outline"
 						size="sm"
-						onclick={addRule}><PlusIcon />Add route rule</Button
+						onclick={addRule}><PlusIcon />Add rule</Button
 					>
 					<p class="text-xs text-muted-foreground">
-						Create entrypoints and users on the <a
+						Manage users on the <a
 							class="underline"
 							href="/entrypoints">Entrypoints page</a
-						>, and tunnels on the
-						<a class="underline" href="/upstreams">Upstreams page</a>. DNS nodes
-						show the configured resolvers.
+						> and connections on the
+						<a class="underline" href="/upstreams">Upstreams page</a>
 					</p>
 				</Card.Content>
 			</Card.Root>
@@ -648,7 +647,7 @@
 
 			<Card.Root class="rounded-lg">
 				<Card.Header>
-					<Card.Title>Nodes</Card.Title>
+					<Card.Title>All items</Card.Title>
 				</Card.Header>
 				<Card.Content class="max-h-72 space-y-2 overflow-y-auto">
 					{#each nodes as node}

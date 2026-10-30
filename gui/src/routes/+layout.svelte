@@ -126,7 +126,7 @@
 		<main class="relative mx-auto max-w-md space-y-5 px-6 py-20">
 			<h1 class="font-display text-3xl font-bold">Granger</h1>
 			<p class="text-sm text-muted-foreground">
-				Enter your administrative token to open the control panel.
+				Enter your admin token to sign in
 			</p>
 			<form
 				class="space-y-4"
@@ -136,7 +136,7 @@
 				}}
 			>
 				<label class="grid gap-2 text-sm" for="admin-token">
-					Administrative token
+					Admin token
 					<Input
 						id="admin-token"
 						name="admin-token"
@@ -244,7 +244,7 @@
 								class="h-2 w-2 rounded-full bg-white/40"
 							></div>
 							<span class="text-[12px] text-white/58"
-								>Administrative session</span
+								>Admin</span
 							>
 						</div>
 					</div>
@@ -253,7 +253,7 @@
 				<main
 					id="main-content"
 					tabindex="-1"
-					class="min-h-[calc(100vh-60px)] p-6"
+					class="min-h-[calc(100vh-60px)] min-w-0 p-4 sm:p-6"
 				>
 					{@render children()}
 				</main>

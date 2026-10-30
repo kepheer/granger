@@ -10,15 +10,15 @@
 	const copy = {
 		title: 'Add upstream',
 		description:
-			'Choose the outgoing connection and give it a name. VPN connections require a provider configuration; direct and existing interfaces use the server network.',
+			'Choose a protocol and add your connection settings',
 		back: 'Back',
 		type: 'Protocol',
 		name: 'Name',
 		iface: 'Interface',
-		config: 'Inline config',
+		config: 'Connection config',
 		upload: 'Upload config',
 		create: 'Create upstream',
-		suggested: 'Suggested defaults',
+		suggested: 'Connection settings',
 		saving: 'Creating upstream…',
 		error: 'Could not create upstream'
 	} as const;
@@ -149,7 +149,7 @@
 	<title>{copy.title} · Granger</title>
 </svelte:head>
 
-<section class="max-w-4xl space-y-5">
+<section class="w-full min-w-0 space-y-5">
 	<Button href="/upstreams" variant="ghost"><ArrowLeftIcon />{copy.back}</Button
 	>
 
@@ -205,9 +205,9 @@
 			{/if}
 			{#if protocolStatusLoaded && installed.includes(selected.type) === false}
 				<p class="text-sm text-muted-foreground">
-					Install this protocol before creating an upstream. <a
+					Install the driver to continue <a
 						class="underline"
-						href="/upstreams">Open protocol installation</a
+						href="/upstreams">View drivers</a
 					>
 				</p>
 			{/if}
