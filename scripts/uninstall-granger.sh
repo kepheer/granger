@@ -82,6 +82,9 @@ iptables -X GRANGER_USER_OUTPUT 2>/dev/null || true
 iptables -t mangle -D OUTPUT -j GRANGER_OUTPUT 2>/dev/null || true
 iptables -t mangle -F GRANGER_OUTPUT 2>/dev/null || true
 iptables -t mangle -X GRANGER_OUTPUT 2>/dev/null || true
+while iptables -t nat -D PREROUTING -j GRANGER_DNS 2>/dev/null; do :; done
+iptables -t nat -F GRANGER_DNS 2>/dev/null || true
+iptables -t nat -X GRANGER_DNS 2>/dev/null || true
 iptables -t mangle -D PREROUTING -j GRANGER_PREROUTING 2>/dev/null || true
 iptables -D FORWARD -j GRANGER_FORWARD 2>/dev/null || true
 iptables -t nat -D POSTROUTING -j GRANGER_POSTROUTING 2>/dev/null || true

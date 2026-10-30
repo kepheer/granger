@@ -119,6 +119,7 @@ func (e Engine) ApplyConfig(cfg config.Config) ApplyPlan {
 		}
 	}
 	res = append(res, e.applyUserDefaultRoutes(cfg)...)
+	res = append(res, e.applyDNSCapture(cfg))
 	dnsRules := e.DNSRules(cfg, ctx)
 	res = append(res, dns.New(e.Runner).Apply(cfg, dnsRules)...)
 	if resultsOK(res) {

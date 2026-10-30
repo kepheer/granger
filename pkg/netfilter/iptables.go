@@ -16,6 +16,7 @@ const (
 	MangleChain      = "GRANGER_PREROUTING"
 	FilterChain      = "GRANGER_FORWARD"
 	NATChain         = "GRANGER_POSTROUTING"
+	DNSChain         = "GRANGER_DNS"
 )
 
 func ResetScript() string {
@@ -25,11 +26,13 @@ func ResetScript() string {
 		ensureChain("", FilterChain),
 		ensureChain("", UserOutputChain),
 		ensureChain("nat", NATChain),
+		ensureChain("nat", DNSChain),
 		EnsureAppend("mangle", "PREROUTING", "-j", MangleChain),
 		EnsureAppend("mangle", "OUTPUT", "-j", OutputChain),
 		EnsureAppend("", "FORWARD", "-j", FilterChain),
 		AccessHooks(),
 		EnsureAppend("nat", "POSTROUTING", "-j", NATChain),
+		EnsureInsert("nat", "PREROUTING", 1, "-j", DNSChain),
 		ShellJoin(append(iptablesPrefix("mangle"), "-F", MangleChain)...),
 		ShellJoin(append(iptablesPrefix("mangle"), "-F", OutputChain)...),
 		ShellJoin(append(iptablesPrefix(""), "-F", FilterChain)...),
