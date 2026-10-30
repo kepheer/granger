@@ -14,3 +14,14 @@ func TestConnectionRegistryIsolatesResultsAndCancellation(t *testing.T) {
 		t.Fatal("connection state is shared")
 	}
 }
+
+func TestStaleSessionCannotSubmitOrCancelCurrentAuthentication(t *testing.T) {
+	manager := New(runner.NewDryRun())
+	manager.sessionID = "current"
+	if manager.CancelSession("stale") || manager.SubmitSessionAsync("stale", nil, nil) {
+		t.Fatal("stale action accepted")
+	}
+	if manager.PendingStatus().SessionID != "current" {
+		t.Fatal("stale action changed the current session")
+	}
+}

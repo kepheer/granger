@@ -81,6 +81,14 @@ func openVPNFallbackService(name, cfgPath, iface string) string {
 }
 
 func systemctlWithFallback(ctx ApplyContext, title, action, primary, fallback string) runner.Result {
+	if action == "stop" {
+		script := serviceStopScript(primary)
+		if fallback != "" && fallback != primary {
+			script = "state=$(systemctl show --property=LoadState --value " + netfilter.ShellQuote(primary) + ") || exit $?\nif [ \"$state\" = not-found ]; then\n" + serviceStopScript(fallback) + "\nelse\n" + serviceStopScript(primary) + "\nfi"
+		}
+		return ctx.Runner.Run(title, 30*time.Second, nil, "sh", "-c", script)
+	}
+
 	if fallback == "" || fallback == primary {
 		return ctx.Runner.Run(title, 30*time.Second, nil, "systemctl", action, primary)
 	}
@@ -243,4 +251,9 @@ func fallbackForService(explicit, candidate string) string {
 		return ""
 	}
 	return candidate
+}
+
+func serviceStopScript(unit string) string {
+	quoted := netfilter.ShellQuote(unit)
+	return "state=$(systemctl show --property=LoadState --value " + quoted + ") || exit $?; [ \"$state\" = not-found ] || systemctl stop " + quoted
 }

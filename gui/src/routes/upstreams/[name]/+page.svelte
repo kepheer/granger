@@ -25,6 +25,7 @@
 	};
 
 	type Pending = {
+		session_id?: string;
 		pending: boolean;
 		busy?: boolean;
 		secret?: boolean;
@@ -263,7 +264,7 @@
 			const result = await api(
 				`/api/snx/${encodeURIComponent(name)}/${action}`,
 				'POST',
-				{ inputs }
+				{ inputs, session_id: pending.session_id }
 			);
 			await updatePending(result.data ?? { pending: false });
 			output =

@@ -179,7 +179,8 @@ type userPayload struct {
 }
 
 type snxPayload struct {
-	Inputs map[string]string `json:"inputs"`
+	SessionID string            `json:"session_id,omitempty"`
+	Inputs    map[string]string `json:"inputs"`
 }
 
 type graphNode struct {
@@ -940,6 +941,10 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	manager := a.snxSessions.Connection(name)
+	if up.IsEnabled() == false && action != "status" && action != "cancel" {
+		writeErrorText(w, http.StatusConflict, "Connection is disabled")
+		return
+	}
 
 	switch action {
 	case "status":
@@ -986,7 +991,7 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if manager.SubmitAsync(body.Inputs, a.reconcileSNX) == false {
+		if manager.SubmitSessionAsync(body.SessionID, body.Inputs, a.reconcileSNX) == false {
 			writeErrorText(w, http.StatusConflict, "Sign-in is already in progress")
 			return
 		}
@@ -996,7 +1001,15 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 			methodNotAllowed(w)
 			return
 		}
-		manager.Cancel()
+		var body snxPayload
+		if err := readJSON(r, &body); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if manager.CancelSession(body.SessionID) == false {
+			writeErrorText(w, http.StatusConflict, "Sign-in session changed; refresh the connection")
+			return
+		}
 		writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: manager.PendingStatus()})
 	case "disconnect":
 		if r.Method != http.MethodPost {

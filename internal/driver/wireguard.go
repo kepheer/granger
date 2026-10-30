@@ -41,7 +41,7 @@ func (WireGuardOutput) Start(_ string, out config.Output, ctx ApplyContext) []ru
 }
 
 func (WireGuardOutput) Stop(_ string, out config.Output, ctx ApplyContext) []runner.Result {
-	return []runner.Result{ctx.Runner.Run("Stop WireGuard output "+out.Interface, 30*time.Second, nil, "systemctl", "stop", wireGuardService(out.Service, out.Interface))}
+	return []runner.Result{systemctlWithFallback(ctx, "Stop WireGuard output "+out.Interface, "stop", wireGuardService(out.Service, out.Interface), "")}
 }
 
 func (WireGuardOutput) Restart(_ string, out config.Output, ctx ApplyContext) []runner.Result {
@@ -82,7 +82,7 @@ func (WireGuardUpstream) Start(name string, up config.Upstream, ctx ApplyContext
 }
 
 func (WireGuardUpstream) Stop(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{ctx.Runner.Run("Stop WireGuard upstream "+name, 30*time.Second, nil, "systemctl", "stop", wireGuardService(up.Service, up.Interface))}
+	return []runner.Result{systemctlWithFallback(ctx, "Stop WireGuard upstream "+name, "stop", wireGuardService(up.Service, up.Interface), "")}
 }
 
 func (WireGuardUpstream) Restart(name string, up config.Upstream, ctx ApplyContext) []runner.Result {

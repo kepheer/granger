@@ -40,3 +40,12 @@ func TestSNXStopHandlesUninstalledDriverWithoutMaskingStopFailure(t *testing.T) 
 		})
 	}
 }
+
+func TestDisabledSNXConnectionCannotStopAnotherActiveDaemon(t *testing.T) {
+	disabled := false
+	cfg := config.Config{Upstreams: map[string]config.Upstream{"active": {Type: "snx-rs"}, "saved": {Type: "snx-rs", Enabled: &disabled}}}
+	results := (SNXRSUpstream{}).Stop("saved", cfg.Upstreams["saved"], ApplyContext{Config: cfg, Runner: runner.NewDryRun()})
+	if len(results) != 1 || results[0].Status != "shared" || results[0].Command != "" {
+		t.Fatal(results)
+	}
+}

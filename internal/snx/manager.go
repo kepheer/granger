@@ -29,6 +29,7 @@ type Manager struct {
 	active     *PendingConnect
 	operation  *authOperation
 	lastResult *runner.Result
+	sessionID  string
 	Runner     runner.Runner
 }
 
@@ -45,6 +46,7 @@ type PendingConnect struct {
 }
 
 type PendingStatus struct {
+	SessionID   string         `json:"session_id,omitempty"`
 	Busy        bool           `json:"busy"`
 	Result      *runner.Result `json:"result,omitempty"`
 	Pending     bool           `json:"pending"`
@@ -297,8 +299,17 @@ func (m *Manager) Disconnect(configPath string) runner.Result {
 	return m.Runner.Run("Disconnect SNX-RS", 25*time.Second, nil, "snxctl", "--config-file", configPath, "disconnect")
 }
 
-func (m *Manager) Cancel() {
+func (m *Manager) Cancel() { m.cancelSession("", false) }
+
+func (m *Manager) CancelSession(id string) bool { return m.cancelSession(id, true) }
+
+func (m *Manager) cancelSession(id string, check bool) bool {
 	m.mu.Lock()
+	if check && (id == "" || id != m.sessionID) {
+		m.mu.Unlock()
+		return false
+	}
+	m.sessionID = ""
 	p := m.pending
 	active := m.active
 	op := m.operation
@@ -315,6 +326,7 @@ func (m *Manager) Cancel() {
 	if p != nil {
 		p.kill()
 	}
+	return true
 }
 
 func (m *Manager) PendingStatus() PendingStatus {
@@ -330,11 +342,11 @@ func (m *Manager) PendingStatus() PendingStatus {
 		}
 	}
 	if m.pending == nil {
-		return PendingStatus{Busy: m.operation != nil, Result: m.lastResult}
+		return PendingStatus{SessionID: m.sessionID, Busy: m.operation != nil, Result: m.lastResult}
 	}
 	step := m.pending.flow[m.pending.step]
 	return PendingStatus{
-		Busy: m.operation != nil, Result: m.lastResult,
+		SessionID: m.sessionID, Busy: m.operation != nil, Result: m.lastResult,
 		Pending: true, Step: stepName(step), StepType: step.Type, Label: step.Label, Secret: step.Secret || step.Type == "password",
 		Output: SanitizeOutput(m.pending.buf.String()), StartedUnix: m.pending.started.Unix(),
 	}

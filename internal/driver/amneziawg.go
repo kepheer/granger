@@ -43,7 +43,7 @@ func (AmneziaWGOutput) Start(_ string, out config.Output, ctx ApplyContext) []ru
 }
 
 func (AmneziaWGOutput) Stop(_ string, out config.Output, ctx ApplyContext) []runner.Result {
-	return []runner.Result{ctx.Runner.Run("Stop AmneziaWG output "+out.Interface, 30*time.Second, nil, "systemctl", "stop", amneziaWGService(out.Service, out.Interface))}
+	return []runner.Result{systemctlWithFallback(ctx, "Stop AmneziaWG output "+out.Interface, "stop", amneziaWGService(out.Service, out.Interface), "")}
 }
 
 func (AmneziaWGOutput) Restart(_ string, out config.Output, ctx ApplyContext) []runner.Result {
@@ -84,7 +84,7 @@ func (AmneziaWGUpstream) Start(name string, up config.Upstream, ctx ApplyContext
 }
 
 func (AmneziaWGUpstream) Stop(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
-	return []runner.Result{ctx.Runner.Run("Stop AmneziaWG upstream "+name, 30*time.Second, nil, "systemctl", "stop", amneziaWGService(up.Service, up.Interface))}
+	return []runner.Result{systemctlWithFallback(ctx, "Stop AmneziaWG upstream "+name, "stop", amneziaWGService(up.Service, up.Interface), "")}
 }
 
 func (AmneziaWGUpstream) Restart(name string, up config.Upstream, ctx ApplyContext) []runner.Result {

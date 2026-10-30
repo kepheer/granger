@@ -37,6 +37,12 @@ func (SNXRSUpstream) Start(name string, up config.Upstream, ctx ApplyContext) []
 }
 
 func (SNXRSUpstream) Stop(name string, up config.Upstream, ctx ApplyContext) []runner.Result {
+	for otherName, other := range ctx.Config.Upstreams {
+		if otherName != name && other.Type == "snx-rs" && other.IsEnabled() && snxRSService(other.Service) == snxRSService(up.Service) {
+			return []runner.Result{{Title: "Keep active SNX-RS instance", OK: true, Status: "shared", Output: "The daemon belongs to another enabled connection"}}
+		}
+	}
+
 	unit := netfilter.ShellQuote(snxRSService(up.Service))
 	script := "state=$(systemctl show --property=LoadState --value " + unit + ") || exit $?; [ \"$state\" = not-found ] || systemctl stop " + unit
 	return []runner.Result{ctx.Runner.Run("Stop SNX-RS upstream "+name, 30*time.Second, nil, "sh", "-c", script)}

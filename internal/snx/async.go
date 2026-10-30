@@ -2,6 +2,8 @@ package snx
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"strings"
 	"time"
 
@@ -15,29 +17,44 @@ type authOperation struct {
 
 func (m *Manager) StartAsync(up config.Upstream, inputs map[string]string, reconcile func() []runner.Result) bool {
 	return m.runAsync(func(ctx context.Context) runner.Result {
-		m.mu.Lock()
-		pending := m.pending != nil
-		m.mu.Unlock()
-		if pending {
-			return runner.Result{Title: "SNX-RS sign-in", Output: "Finish or cancel the current sign-in first", OK: false, Status: "error"}
-		}
+
 		return m.start(ctx, up, inputs)
 	}, reconcile)
 }
 
 func (m *Manager) SubmitAsync(inputs map[string]string, reconcile func() []runner.Result) bool {
-	return m.runAsync(func(context.Context) runner.Result {
-		return m.Submit(inputs)
-	}, reconcile)
+	return m.SubmitSessionAsync(m.PendingStatus().SessionID, inputs, reconcile)
 }
 
-func (m *Manager) runAsync(run func(context.Context) runner.Result, reconcile func() []runner.Result) bool {
+func (m *Manager) SubmitSessionAsync(id string, inputs map[string]string, reconcile func() []runner.Result) bool {
+	return m.runAsync(func(context.Context) runner.Result { return m.Submit(inputs) }, reconcile, id)
+}
+
+func (m *Manager) runAsync(run func(context.Context) runner.Result, reconcile func() []runner.Result, expectedSession ...string) bool {
 	m.mu.Lock()
 	if m.operation != nil {
 		m.mu.Unlock()
 		return false
 	}
 
+	if len(expectedSession) > 0 {
+		if expectedSession[0] == "" || expectedSession[0] != m.sessionID {
+			m.mu.Unlock()
+			return false
+		}
+	}
+	if len(expectedSession) == 0 {
+		if m.pending != nil {
+			m.mu.Unlock()
+			return false
+		}
+		var id [16]byte
+		if _, err := rand.Read(id[:]); err != nil {
+			m.mu.Unlock()
+			return false
+		}
+		m.sessionID = hex.EncodeToString(id[:])
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	op := &authOperation{cancel: cancel}
 	m.operation = op
