@@ -768,11 +768,6 @@ func (a apiServer) handleUsers(w http.ResponseWriter, r *http.Request) {
 			restricted = *payload.AccessRestricted
 		}
 		allowed := payload.AllowedUpstreams
-		if allowed == nil {
-			if _, ok := cfg.Upstreams["direct"]; ok {
-				allowed = []string{"direct"}
-			}
-		}
 		cfg.Users[id] = config.User{DisplayName: strings.TrimSpace(payload.DisplayName), Output: payload.Output, AccessRestricted: restricted, AllowedUpstreams: allowed, DefaultUpstream: payload.DefaultUpstream}
 		if err := cfg.Validate(); err != nil {
 			writeError(w, http.StatusBadRequest, err)

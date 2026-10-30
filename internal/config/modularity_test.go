@@ -49,3 +49,10 @@ func TestSNIRoutingIdentitiesCannotCollideAcrossProfiles(t *testing.T) {
 		t.Fatalf("colliding SNI identities accepted: %v", err)
 	}
 }
+
+func TestIgnoredManagedProtocolOptionsAreRejected(t *testing.T) {
+	cfg := Config{Outputs: map[string]Output{"proxy": {Type: "xray", ProtocolOptions: map[string]string{"transport": "unsupported"}}}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("ignored protocol options were accepted")
+	}
+}

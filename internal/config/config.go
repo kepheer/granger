@@ -276,6 +276,9 @@ func (c Config) Validate() error {
 		if supported == false || module.Entrypoint == false {
 			return errors.New("output " + name + " has unsupported type " + out.Type)
 		}
+		if out.Type != "amneziawg" && len(out.ProtocolOptions) > 0 {
+			return errors.New("output " + name + ": protocol_options are supported only by AmneziaWG")
+		}
 		if out.Type == "" {
 			return errors.New("output " + name + " has empty type")
 		}

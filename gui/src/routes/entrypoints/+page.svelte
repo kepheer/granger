@@ -109,10 +109,7 @@
 	}
 
 	function createAllowed(output: string) {
-		return (
-			allowedByOutput[output] ??
-			upstreamNames.filter((name) => name === 'direct')
-		);
+		return allowedByOutput[output] ?? [];
 	}
 
 	function changeCreateAllowed(
