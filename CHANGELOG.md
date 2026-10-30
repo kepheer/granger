@@ -1,10 +1,13 @@
 # Changelog
 
-## 1.0.0-rc.1
+Changes are documented using [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-- Added VPN user profiles with configuration downloads, QR codes and revocation.
-- Added personal access to upstream interfaces and default routes.
-- Added domain and subnet routing with fallback.
-- Added tunnel and route recovery after reboot.
-- Moved driver installation to the web interface.
-- Added web panel access by VPN IP and DNS-based routing.
+## [Unreleased]
+
+## [1.0.0-rc.1] - 2026-10-30
+
+MVP
+
+[Unreleased]: https://github.com/kepheer/granger/compare/v1.0.0-rc.1...HEAD
+[1.0.0-rc.1]: https://github.com/kepheer/granger/releases/tag/v1.0.0-rc.1
