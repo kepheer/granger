@@ -44,6 +44,7 @@ type User struct {
 }
 
 type Server struct {
+	GUIVPNPort   int      `json:"gui_vpn_port,omitempty" yaml:"gui_vpn_port,omitempty"`
 	PublicIP     string   `json:"public_ip,omitempty" yaml:"public_ip,omitempty"`
 	UplinkIF     string   `json:"uplink_if,omitempty" yaml:"uplink_if,omitempty"`
 	UplinkGW     string   `json:"uplink_gw,omitempty" yaml:"uplink_gw,omitempty"`
@@ -194,6 +195,10 @@ func SaveAtomic(path string, cfg Config) error {
 }
 
 func (c Config) Validate() error {
+	if c.Server.GUIVPNPort < 0 || c.Server.GUIVPNPort > 65535 {
+		return errors.New("gui_vpn_port must be between 0 and 65535")
+	}
+
 	interfaces := map[string]string{}
 	userMarks := map[int]string{}
 	services := map[string]string{}

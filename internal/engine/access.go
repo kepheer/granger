@@ -110,6 +110,10 @@ func writeClientInput(body *strings.Builder, cfg config.Config, out config.Outpu
 		return
 	}
 	if active && exists {
+		if cfg.Server.GUIVPNPort > 0 && out.ServerIP != "" {
+			body.WriteString(accessRule(netfilter.UserInputChain, append(append([]string{}, match...), "-d", out.ServerIP, "-p", "tcp", "--dport", strconv.Itoa(cfg.Server.GUIVPNPort), "-j", "ACCEPT")...))
+		}
+
 		addresses := []string{out.ServerIP}
 		if ip := net.ParseIP(cfg.Server.DNSListen); ip != nil && ip.IsLoopback() == false && cfg.Server.DNSListen != out.ServerIP {
 			addresses = append(addresses, cfg.Server.DNSListen)

@@ -80,8 +80,9 @@ func inputDecision(t *testing.T, policy, iface, source, destination, protocol, p
 	return "RETURN"
 }
 
-func TestManagedClientInputAllowsDNSAndBlocksLocalServices(t *testing.T) {
+func TestManagedClientInputAllowsDNSAndConfiguredGUI(t *testing.T) {
 	cfg := config.Config{
+		Server: config.Server{GUIVPNPort: 80},
 		Users: map[string]config.User{
 			"restricted": {AccessRestricted: true},
 			"legacy":     {},
@@ -103,6 +104,11 @@ func TestManagedClientInputAllowsDNSAndBlocksLocalServices(t *testing.T) {
 	policy := New(runner.NewDryRun()).applyUserAccess(cfg)[0].Output
 	cases := []struct{ source, destination, protocol, port, want string }{
 		{"10.66.0.2", "10.66.0.1", "udp", "53", "ACCEPT"},
+		{"10.66.0.2", "10.66.0.1", "tcp", "80", "ACCEPT"},
+		{"10.66.0.2", "10.44.0.1", "tcp", "80", "REJECT"},
+		{"10.66.0.5", "10.66.0.1", "tcp", "80", "REJECT"},
+		{"10.66.0.6", "10.66.0.1", "tcp", "80", "REJECT"},
+		{"10.66.0.7", "10.66.0.1", "tcp", "80", "REJECT"},
 		{"10.66.0.2", "10.66.0.1", "tcp", "53", "ACCEPT"},
 		{"10.66.0.2", "10.66.0.1", "tcp", "2288", "REJECT"},
 		{"10.66.0.2", "10.44.0.1", "tcp", "8080", "REJECT"},
@@ -119,6 +125,12 @@ func TestManagedClientInputAllowsDNSAndBlocksLocalServices(t *testing.T) {
 			t.Errorf("%+v: got %s", test, got)
 		}
 	}
+	cfg.Server.GUIVPNPort = 0
+	closedPolicy := New(runner.NewDryRun()).applyUserAccess(cfg)[0].Output
+	if got := inputDecision(t, closedPolicy, "wg0", "10.66.0.2", "10.66.0.1", "tcp", "80"); got != "REJECT" {
+		t.Fatalf("unconfigured GUI port was allowed: %s", got)
+	}
+
 	if got := inputDecision(t, policy, "eth0", "192.0.2.8", "192.0.2.1", "tcp", "2288"); got != "RETURN" {
 		t.Fatalf("VPN policy affected host management interface: %s", got)
 	}
