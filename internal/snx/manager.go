@@ -3,6 +3,7 @@ package snx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -106,7 +107,44 @@ func escape(s string) string {
 	return strings.ReplaceAll(s, `"`, `\"`)
 }
 
+func CheckConfig(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return errors.New("Add an SNX-RS config before signing in")
+	}
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return errors.New("Add an SNX-RS config before signing in")
+	}
+	if err != nil {
+		return fmt.Errorf("Could not read the SNX-RS config: %w", err)
+	}
+	if info.Mode().IsRegular() == false {
+		return errors.New("SNX-RS config must be a regular file")
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("Could not read the SNX-RS config: %w", err)
+	}
+	if strings.TrimSpace(string(body)) == "" {
+		return errors.New("SNX-RS config is empty")
+	}
+	return nil
+}
+
+func connectCommand(ctx context.Context, path string) *exec.Cmd {
+	return exec.CommandContext(ctx, "snxctl", "--config-file", path, "connect")
+}
+
 func (m *Manager) Start(up config.Upstream, inputs map[string]string) runner.Result {
+	if err := CheckConfig(up.Config); err != nil {
+		return runner.Result{Title: "Check SNX-RS config", Command: up.Config, Output: err.Error(), OK: false, Status: "error"}
+	}
+	if _, err := exec.LookPath("snxctl"); err != nil {
+		return runner.Result{Title: "Check SNX-RS driver", Command: "snxctl", Output: "Install the SNX-RS driver before signing in", OK: false, Status: "error"}
+	}
+	if up.IsEnabled() == false {
+		return runner.Result{Title: "Check SNX-RS connection", Command: "config", Output: "Enable this connection before signing in", OK: false, Status: "error"}
+	}
 	m.Cancel()
 	flow := normalizeFlow(up.AuthFlow)
 	if username := strings.TrimSpace(inputs["username"]); username != "" && up.Config != "" {
@@ -123,10 +161,10 @@ func (m *Manager) Start(up config.Upstream, inputs map[string]string) runner.Res
 	if value == "" {
 		return runner.Result{Title: "Start SNX-RS auth", Command: "snxctl connect", Output: "first secret value is empty", OK: false, Status: "error"}
 	}
-	_ = m.Runner.RunSoft("Disconnect previous SNX-RS session", 20*time.Second, nil, "snxctl", "disconnect")
+	_ = m.Runner.RunSoft("Disconnect previous SNX-RS session", 20*time.Second, nil, "snxctl", "--config-file", up.Config, "disconnect")
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, "snxctl", "connect")
+	cmd := connectCommand(ctx, up.Config)
 	buf := &runner.SafeBuffer{}
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
@@ -193,9 +231,9 @@ func (m *Manager) Submit(inputs map[string]string) runner.Result {
 	return runner.Result{Title: "Submit SNX-RS auth", Command: "snxctl connect", Output: SanitizeOutput(p.buf.String()), OK: true, Status: "pending:" + p.flow[next].Type}
 }
 
-func (m *Manager) Disconnect() runner.Result {
+func (m *Manager) Disconnect(configPath string) runner.Result {
 	m.Cancel()
-	return m.Runner.Run("Disconnect SNX-RS", 25*time.Second, nil, "snxctl", "disconnect")
+	return m.Runner.Run("Disconnect SNX-RS", 25*time.Second, nil, "snxctl", "--config-file", configPath, "disconnect")
 }
 
 func (m *Manager) Cancel() {

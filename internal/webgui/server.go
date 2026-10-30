@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -442,6 +443,16 @@ func (a apiServer) handleUpstream(w http.ResponseWriter, r *http.Request) {
 		if err := readJSON(r, &body); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
+		}
+		if body.Enabled && up.Type == "snx-rs" {
+			if err := snx.CheckConfig(up.Config); err != nil {
+				writeError(w, http.StatusConflict, err)
+				return
+			}
+			if _, err := a.ensureProtocol(up.Type); err != nil {
+				writeError(w, http.StatusConflict, err)
+				return
+			}
 		}
 		up.Enabled = &body.Enabled
 		cfg.Upstreams[name] = up
@@ -877,7 +888,19 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 			methodNotAllowed(w)
 			return
 		}
-		writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: a.snx.PendingStatus()})
+		configErr := snx.CheckConfig(up.Config)
+		configMessage := ""
+		if configErr != nil {
+			configMessage = configErr.Error()
+		}
+		_, driverErr := exec.LookPath("snxctl")
+		data := struct {
+			snx.PendingStatus
+			ConfigReady     bool   `json:"config_ready"`
+			ConfigError     string `json:"config_error,omitempty"`
+			DriverInstalled bool   `json:"driver_installed"`
+		}{a.snx.PendingStatus(), configErr == nil, configMessage, driverErr == nil}
+		writeJSON(w, http.StatusOK, apiResponse{OK: true, Data: data})
 	case "start":
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w)
@@ -921,7 +944,7 @@ func (a apiServer) handleSNX(w http.ResponseWriter, r *http.Request) {
 			methodNotAllowed(w)
 			return
 		}
-		results := []runner.Result{a.snx.Disconnect()}
+		results := []runner.Result{a.snx.Disconnect(up.Config)}
 		results = append(results, a.engine.ApplyConfig(cfg).Results...)
 		writeJSON(w, http.StatusOK, apiResponse{OK: allResultsOK(results), Results: results, Data: a.snx.PendingStatus()})
 	default:
