@@ -200,6 +200,7 @@
 															? 'page'
 															: undefined}
 														{...props}
+														type={undefined}
 													>
 														<item.icon
 															size={16}
