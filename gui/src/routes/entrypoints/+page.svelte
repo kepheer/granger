@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -73,6 +73,27 @@
 	let accessOpen = $state(false);
 	let accessAllowed = $state<string[]>([]);
 	let accessDefault = $state('');
+
+	let createOpen = $state(false);
+	let createOutput = $state('');
+	let createError = $state('');
+	let createNameError = $state('');
+	let createSuccess = $state('');
+	let createTrigger = $state<HTMLElement | null>(null);
+	let createNameInput = $state<HTMLInputElement | null>(null);
+	let createErrorSummary = $state<HTMLParagraphElement | null>(null);
+	let createProgress = $state<HTMLParagraphElement | null>(null);
+
+	function openCreateUser(output: string, trigger: HTMLElement) {
+		createOutput = output;
+		createTrigger = trigger;
+		if (busy === '') {
+			createError = '';
+			createNameError = '';
+		}
+		createSuccess = '';
+		createOpen = true;
+	}
 
 	function createAllowed(output: string) {
 		return (
@@ -163,11 +184,17 @@
 
 		const displayName = (userNames[output] ?? '').trim();
 		if (displayName === '') {
-			message = 'Enter a user name';
+			createNameError = 'Enter a user name';
+			await tick();
+			createNameInput?.focus();
 			return;
 		}
 		busy = output;
 		message = '';
+		createError = '';
+		createNameError = '';
+		await tick();
+		createProgress?.focus();
 		try {
 			const response = await fetch('/api/users', {
 				method: 'POST',
@@ -192,10 +219,21 @@
 					body.error ?? failed?.Output ?? 'Could not issue profile'
 				);
 			}
+			createOpen = false;
+			createSuccess = `${displayName} and their connection profile were created`;
 			userNames[output] = '';
 			await loadEntrypoints();
 		} catch (error) {
-			message = error instanceof Error ? error.message : String(error);
+			const errorMessage =
+				error instanceof Error ? error.message : String(error);
+			if (createOpen) {
+				createError = errorMessage;
+				await tick();
+				createErrorSummary?.focus();
+			}
+			if (createOpen === false) {
+				message = errorMessage;
+			}
 		} finally {
 			busy = '';
 		}
@@ -353,6 +391,9 @@
 	</div>
 
 	{#if message}<p class="text-sm text-red-300" role="alert">{message}</p>{/if}
+	{#if createSuccess}<p role="status" class="text-sm text-emerald-300">
+			{createSuccess}
+		</p>{/if}
 	<div class="space-y-4">
 		{#if loaded === false}<p
 				role="status"
@@ -387,49 +428,19 @@
 					</div>
 				</Card.Header>
 				<Card.Content>
-					<div class="mb-4 flex flex-wrap gap-2">
-						<label class="grid w-full gap-2 text-xs text-muted-foreground">
-							User name
-							<Input
-								aria-label={`User name for ${entrypoint.name}`}
-								placeholder="User name"
-								bind:value={userNames[entrypoint.name]}
-							/>
-						</label>
+					<div class="mb-4">
 						<Button
-							disabled={busy !== ''}
-							onclick={() => createUser(entrypoint.name)}
-							><PlusIcon />Create user and config</Button
+							type="button"
+							aria-haspopup="dialog"
+							aria-controls={createOpen && createOutput === entrypoint.name
+								? 'create-user-dialog'
+								: undefined}
+							disabled={busy !== '' && busy !== entrypoint.name}
+							onclick={(event) =>
+								openCreateUser(entrypoint.name, event.currentTarget)}
+							><PlusIcon />Create user</Button
 						>
 					</div>
-					<fieldset
-						class="mb-4 flex flex-wrap gap-4 text-xs text-muted-foreground"
-					>
-						<legend class="mb-2">Allowed upstreams for the new user</legend>
-						{#each upstreamNames as upstream}
-							<div class="flex items-center gap-2">
-								<Checkbox
-									id={`create-${entrypoint.name}-${upstream}`}
-									checked={createAllowed(entrypoint.name).includes(upstream)}
-									disabled={busy !== ''}
-									onCheckedChange={(checked) =>
-										changeCreateAllowed(entrypoint.name, upstream, checked)}
-								/>
-								<Label for={`create-${entrypoint.name}-${upstream}`}
-									>{upstream}</Label
-								>
-							</div>
-						{/each}
-						<div class="grid w-full gap-2 sm:max-w-xs">
-							<Label for={`default-${entrypoint.name}`}>Default route</Label>
-							<UpstreamSelect
-								id={`default-${entrypoint.name}`}
-								options={createAllowed(entrypoint.name)}
-								bind:value={defaultByOutput[entrypoint.name]}
-								disabled={busy !== ''}
-							/>
-						</div>
-					</fieldset>
 					<div
 						role="table"
 						aria-label={`Users of ${entrypoint.name}`}
@@ -512,8 +523,8 @@
 								</div>
 							</div>
 						{:else}<p class="p-4 text-sm text-muted-foreground">
-								No profiles issued yet. Create a user above to generate a
-								connection config.
+								No profiles issued yet. Use Create user to generate a connection
+								config.
 							</p>
 						{/each}
 					</div>
@@ -522,6 +533,167 @@
 		{/each}
 	</div>
 </section>
+
+<Sheet.Root bind:open={createOpen}>
+	<Sheet.Content
+		id="create-user-dialog"
+		class="data-[side=right]:w-full data-[side=right]:sm:max-w-lg"
+		onOpenAutoFocus={(event) => {
+			event.preventDefault();
+			createNameInput?.focus();
+		}}
+		onCloseAutoFocus={(event) => {
+			event.preventDefault();
+			createTrigger?.focus();
+		}}
+	>
+		<Sheet.Header class="pr-12">
+			<Sheet.Title>Create user</Sheet.Title>
+			<Sheet.Description
+				>Create a connection profile for {createOutput}</Sheet.Description
+			>
+		</Sheet.Header>
+		{#if createOutput !== ''}
+			<form
+				class="flex min-h-0 flex-1 flex-col"
+				aria-busy={busy === createOutput}
+				novalidate
+				onsubmit={(event) => {
+					event.preventDefault();
+					void createUser(createOutput);
+				}}
+			>
+				<div class="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 pb-6">
+					{#if createError}
+						<p
+							bind:this={createErrorSummary}
+							tabindex="-1"
+							role="alert"
+							class="rounded-lg border border-red-400/40 bg-red-400/10 p-3 text-sm text-red-300"
+						>
+							{createError}
+						</p>
+					{/if}
+					<div class="grid gap-2">
+						<Label for="create-user-name"
+							>User name <span class="text-muted-foreground">(required)</span
+							></Label
+						>
+						<Input
+							id="create-user-name"
+							class="border-muted-foreground/70"
+							name="display_name"
+							bind:ref={createNameInput}
+							bind:value={userNames[createOutput]}
+							required
+							autocomplete="off"
+							disabled={busy === createOutput}
+							aria-invalid={createNameError !== '' ? true : undefined}
+							aria-describedby={createNameError !== ''
+								? 'create-user-name-error'
+								: undefined}
+							oninput={() => {
+								createNameError = '';
+							}}
+						/>
+						{#if createNameError}<p
+								id="create-user-name-error"
+								role="alert"
+								class="text-sm text-red-300"
+							>
+								{createNameError}
+							</p>{/if}
+					</div>
+					<fieldset
+						disabled={busy === createOutput}
+						aria-describedby="create-upstream-help"
+						class="space-y-2"
+					>
+						<legend class="mb-2 text-sm font-medium">Allowed upstreams</legend>
+						<p
+							id="create-upstream-help"
+							class="mb-3 text-sm text-muted-foreground"
+						>
+							Choose which outgoing interfaces this user can use.
+						</p>
+						{#each upstreamNames as upstream}
+							<div
+								class="flex min-h-11 items-center gap-3 rounded-lg border border-border px-3"
+							>
+								<Checkbox
+									id={`new-user-${upstream}`}
+									class="size-6 border-muted-foreground/70"
+									checked={createAllowed(createOutput).includes(upstream)}
+									disabled={busy === createOutput}
+									onCheckedChange={(checked) =>
+										changeCreateAllowed(createOutput, upstream, checked)}
+								/>
+								<Label
+									for={`new-user-${upstream}`}
+									class="flex min-h-11 flex-1 cursor-pointer items-center"
+									>{upstream}</Label
+								>
+							</div>
+						{/each}
+						{#if upstreamNames.length === 0}<p
+								class="text-sm text-muted-foreground"
+							>
+								No upstreams are configured.
+							</p>{/if}
+					</fieldset>
+					<div class="grid gap-2">
+						<Label for="create-user-default">Default route</Label>
+						<UpstreamSelect
+							id="create-user-default"
+							class="border-muted-foreground/70"
+							options={createAllowed(createOutput)}
+							bind:value={defaultByOutput[createOutput]}
+							disabled={busy === createOutput}
+							aria-describedby="create-default-help"
+						/>
+						<p id="create-default-help" class="text-sm text-muted-foreground">
+							If a shared rule selects an unavailable or forbidden upstream,
+							traffic uses this user's allowed default. Without an allowed
+							default, that traffic is blocked.
+						</p>
+					</div>
+					{#if createAllowed(createOutput).length === 0}<p
+							role="status"
+							class="text-sm text-amber-200"
+						>
+							No upstreams selected. This user will have no upstream network
+							access.
+						</p>{/if}
+					{#if busy === createOutput}<p
+							bind:this={createProgress}
+							tabindex="-1"
+							role="status"
+							class="text-sm text-muted-foreground"
+						>
+							Creating user and profile. Creation continues if you close this
+							panel.
+						</p>{/if}
+				</div>
+				<div
+					class="flex flex-wrap justify-end gap-2 border-t border-border p-4"
+				>
+					<Button
+						type="button"
+						variant="outline"
+						onclick={() => {
+							createOpen = false;
+						}}>{busy === createOutput ? 'Close' : 'Cancel'}</Button
+					>
+					<Button type="submit" disabled={busy !== ''}
+						>{busy === createOutput
+							? 'Creating…'
+							: 'Create user and config'}</Button
+					>
+				</div>
+			</form>
+		{/if}
+	</Sheet.Content>
+</Sheet.Root>
 
 <Sheet.Root bind:open={qrOpen}>
 	<Sheet.Content class="w-full sm:max-w-md">

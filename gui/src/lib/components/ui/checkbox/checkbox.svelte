@@ -25,15 +25,15 @@
 	{...restProps}
 >
 	{#snippet children({ checked, indeterminate })}
-		<div
+		<span
 			data-slot="checkbox-indicator"
 			class="[&>svg]:size-3.5 grid place-content-center text-current transition-none"
 		>
 			{#if checked}
-				<CheckIcon />
+				<CheckIcon aria-hidden="true" focusable="false" />
 			{:else if indeterminate}
-				<MinusIcon />
+				<MinusIcon aria-hidden="true" focusable="false" />
 			{/if}
-		</div>
+		</span>
 	{/snippet}
 </CheckboxPrimitive.Root>

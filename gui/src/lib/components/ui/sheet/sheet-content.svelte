@@ -50,7 +50,7 @@
 						size="icon-sm"
 						{...props}
 					>
-						<XIcon />
+						<XIcon aria-hidden="true" focusable="false" />
 						<span class="sr-only">Close</span>
 					</Button>
 				{/snippet}

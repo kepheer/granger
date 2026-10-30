@@ -30,7 +30,11 @@
 			class="pointer-events-none absolute right-2 flex size-4 items-center justify-center"
 		>
 			{#if selected}
-				<CheckIcon class="pointer-events-none" />
+				<CheckIcon
+					aria-hidden="true"
+					focusable="false"
+					class="pointer-events-none"
+				/>
 			{/if}
 		</span>
 		<span class="flex flex-1 gap-2 shrink-0 whitespace-nowrap">

@@ -25,5 +25,9 @@
 	{...restProps}
 >
 	{@render children?.()}
-	<CaretDownIcon class="text-muted-foreground size-4 pointer-events-none" />
+	<CaretDownIcon
+		aria-hidden="true"
+		focusable="false"
+		class="text-muted-foreground size-4 pointer-events-none"
+	/>
 </SelectPrimitive.Trigger>
